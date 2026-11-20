@@ -1,5 +1,5 @@
 ---
-name: Zscanner IAC Scan
+name: Zscaler NSS Azure Release
 on:
   # Trigger the workflow on push or pull request
   # but only for the master branch
