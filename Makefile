@@ -10,6 +10,7 @@ export RESOURCE_GROUP LOCATION PARAMETER_FILE PARAMETERS DEPLOYMENT_NAME POLL_SE
 export CONFIRM_DESTROY KEEP_NSS_SERVER KEEP_RESOURCE_GROUP NSS_SERVER_ID PYTHON
 
 help:
+	@bash scripts/deploy.sh logo
 	@echo "Zscaler NSS on Azure"
 	@echo
 	@echo "  make deploy                                            Ask for the values, then deploy as below."

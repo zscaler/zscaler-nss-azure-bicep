@@ -1,12 +1,8 @@
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/zscaler/zscaler-nss-azure-bicep)](https://github.com/zscaler/zscaler-nss-azure-bicep/releases)
-[![License](https://img.shields.io/github/license/zscaler/zscaler-nss-azure-bicep?color=blue)](https://github.com/zscaler/zscaler-nss-azure-bicep/blob/master/LICENSE)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/willguibr/zscaler-nss-azure-bicep)](https://github.com/willguibr/zscaler-nss-azure-bicep/releases)
+[![License](https://img.shields.io/github/license/willguibr/zscaler-nss-azure-bicep?color=blue)](https://github.com/willguibr/zscaler-nss-azure-bicep/blob/master/LICENSE)
 [![Zscaler Community](https://img.shields.io/badge/zscaler-community-blue)](https://community.zscaler.com/)
 
 # Zscaler NSS Azure Bicep Deployment
-
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
-[![Deploy to Azure Gov](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazuregov.svg)](https://portal.azure.us/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
-[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg?sanitize=true)](http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
 
 ## Overview
 
@@ -68,7 +64,7 @@ The NSS VM carries 2 network interfaces. The primary interface is used for manag
 | `main.bicepparam` | Parameter file for a new virtual network and a new storage account. |
 | `main.existing.bicepparam` | Parameter file for an existing virtual network and an existing storage account. |
 | `bicepconfig.json` | Bicep linter configuration. |
-| `azuredeploy.json` | ARM template compiled from `main.bicep`. Generated; it exists for the **Deploy to Azure** buttons. |
+| `azuredeploy.json` | ARM template compiled from `main.bicep`. Generated; deploy with the command-line path in this README, not from the Azure Portal. |
 
 ## Deployment Instructions
 
@@ -78,9 +74,9 @@ Before deploying, ensure you have the following:
 
 1. **Azure Subscription**: An active Azure subscription with permissions to create resources in the target resource group. If you use an existing virtual network in another resource group, you also need permission to join its subnets. A subscription-level deployment (`main.sub.bicep`) also needs permission to create deployments at subscription scope and, when it creates the resource group, to create resource groups, for example through the Contributor role on the subscription.
 2. **SAS Token**: Contact [Zscaler Support](https://help.zscaler.com/login-tickets) to obtain the NSS VHD SAS Token for your selected region.
-3. **Resource Group**: Decide whether the NSS VM goes into a new or an existing resource group. The portal form and the subscription-level deployment (`main.sub.bicep`) can create the resource group for you. A deployment of `main.bicep` needs a resource group that already exists.
+3. **Resource Group**: Decide whether the NSS VM goes into a new or an existing resource group. `make deploy` and `main.sub.bicep` can create the resource group for you. A deployment of `main.bicep` needs a resource group that already exists.
 4. **Resource Providers**: `Microsoft.Compute`, `Microsoft.Network`, `Microsoft.Storage`, `Microsoft.Resources` and `Microsoft.ContainerInstance` registered in the subscription. Deployment scripts run in Azure Container Instances.
-5. **Tools** (not needed for the portal option): [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) 2.53.0 or later with the Bicep CLI (`az bicep install`). On Linux and macOS also `make` and `bash`; on Windows, Windows PowerShell 5.1 or PowerShell 7. Azure PowerShell is only needed for the Azure PowerShell commands under [Other Ways to Deploy](#other-ways-to-deploy), together with the [Bicep CLI](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install) on the `PATH`. The Bicep files are validated with Bicep CLI 0.49.2.
+5. **Tools**: [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) 2.53.0 or later with the Bicep CLI (`az bicep install`). On Linux and macOS also `make` and `bash`; on Windows, Windows PowerShell 5.1 or PowerShell 7. Azure PowerShell is only needed for the Azure PowerShell commands under [Other Ways to Deploy](#other-ways-to-deploy), together with the [Bicep CLI](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install) on the `PATH`. The Bicep files are validated with Bicep CLI 0.49.2.
 
 The optional [NSS certificate installation](#optional-install-the-nss-certificate) has additional prerequisites, listed in that section.
 
@@ -92,7 +88,7 @@ This is the way to deploy from the command line. One command creates the resourc
 
 The shortest way is to let the command ask for everything: after steps 1 to 3, run `make deploy` (Linux and macOS) or `.\scripts\deploy.ps1 Deploy` (Windows) and answer its questions. Step 4 describes them.
 
-To deploy from the Azure Portal, or with your own `az` or Azure PowerShell commands, see [Other Ways to Deploy](#other-ways-to-deploy).
+To deploy with your own `az` or Azure PowerShell commands instead of `make`, see [Other Ways to Deploy](#other-ways-to-deploy).
 
 #### Step 1: Prepare
 
@@ -103,8 +99,8 @@ To deploy from the Azure Portal, or with your own `az` or Azure PowerShell comma
 #### Step 2: Get the repository
 
 ```bash
-git clone https://github.com/zscaler/zscaler-nss-azure-bicep.git
-cd zscaler-nss-azure-bicep
+git clone https://github.com/willguibr/zscaler-nss-azure-bicep.git
+cd nss-azure-deploy
 ```
 
 All commands below are run from this directory.
@@ -394,28 +390,11 @@ When you use an existing virtual network, both subnets must already exist and th
 
 In `main.sub.bicep`, `location` defaults to the location of the deployment (`--location`) instead of the location of the resource group. It is the location of a new resource group and of all resources. `virtualNetworkResourceGroup` is empty by default, which means the resource group of the deployment.
 
-These two parameters do not exist in `main.bicep` or in the portal form. There the resource group is chosen outside the template: with the **Resource Group** field of the portal, or with `--resource-group` on the command line.
+These two parameters do not exist in `main.bicep`. There the resource group is chosen with `--resource-group` on the command line.
 
 ### Other Ways to Deploy
 
-[Deploy Step by Step](#deploy-step-by-step) is the recommended way from the command line. The portal and the plain commands below deploy the same template.
-
-#### Azure Portal
-
-1. Click the **Deploy to Azure** button at the top of this README
-2. Sign in to your Azure account if prompted
-3. Fill in the required parameters:
-   - **Subscription**: Select your Azure subscription
-   - **Resource Group**: Create new or select existing
-   - **Region**: Select your deployment region
-   - **VHD Region**: Select the Zscaler storage region closest to your deployment (see [VHD Image Storage](#zscaler-nss-vhd-image-storage) section)
-   - **SAS Token**: Paste the SAS token obtained from Zscaler Support
-   - **VM Size**: Select the appropriate VM size (default: `Standard_D2_v4`)
-   - **SSH Source Address Prefix**: Restrict SSH access to your admin IP range (recommended)
-4. Review the remaining parameters and adjust as needed
-5. Click **Review + create**, then **Create** to start deployment
-
-The portal deploys `azuredeploy.json`, which is compiled from `main.bicep`.
+[Deploy Step by Step](#deploy-step-by-step) is the recommended way from the command line. The plain commands below deploy the same Bicep entry points.
 
 #### Azure CLI, without the scripts
 
@@ -709,7 +688,7 @@ make destroy RESOURCE_GROUP=NSS-RG
 
 Without a resource group, the one of the saved answers is used.
 
-The command finds the deployment through its record in the subscription, `nss-<resource group>`, which `make deploy` and `deploy.ps1` create. A deployment from the Azure Portal or with your own `az` commands has no such record: delete its resource group and its NSS server object yourself.
+The command finds the deployment through its record in the subscription, `nss-<resource group>`, which `make deploy` and `deploy.ps1` create. A deployment started with plain `az` commands and another name has no such record: delete its resource group and its NSS server object yourself.
 
 It first lists what it deletes and what it keeps, and deletes nothing until you type the name of the resource group. Then it works in this order:
 
@@ -827,7 +806,7 @@ See [CLAUDE.md](CLAUDE.md) for the conventions used in the Bicep code.
 
 ## Support and Reporting Issues
 
-Support for this deployment is made available exclusively through Github repo issue tracking.  You are also welcome to contact the contributors directly via their provided contact information.  If you find a bug, please open an issue against this repo [here](https://github.com/zscaler/zscaler-nss-azure-bicep/issues).
+Support for this deployment is made available exclusively through Github repo issue tracking.  You are also welcome to contact the contributors directly via their provided contact information.  If you find a bug, please open an issue against this repo [here](https://github.com/willguibr/zscaler-nss-azure-bicep/issues).
 
 ## Contributors
 
@@ -838,7 +817,7 @@ Zscaler is actively contributing to and maintaining this repo.
 
 ## Licensing
 
-This work is released under the MIT license. A copy of the license is provided in the [LICENSE](https://github.com/zscaler/zscaler-nss-azure-bicep/blob/master/LICENSE) file.
+This work is released under the MIT license. A copy of the license is provided in the [LICENSE](https://github.com/willguibr/zscaler-nss-azure-bicep/blob/master/LICENSE) file.
 
 ## References
 

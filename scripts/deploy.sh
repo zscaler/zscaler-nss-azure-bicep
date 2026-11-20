@@ -180,7 +180,124 @@ TERMINAL_COLUMNS=80
 COPIED=0
 TOTAL=0
 
+# Zscaler ASCII logo (colors match Zenith Live application_segment/main.py).
+logo_rgb() {
+  printf '\033[38;2;%d;%d;%dm' "$1" "$2" "$3"
+}
+
+logo_supports_truecolor() {
+  [ -t 1 ] || return 1
+  [ -n "${NO_COLOR:-}" ] && return 1
+  case "${COLORTERM:-}" in
+    truecolor | 24bit | TRUECOLOR | 24BIT) return 0 ;;
+  esac
+  case "${TERM:-}" in
+    *256color* | *kitty* | *iterm*) return 0 ;;
+  esac
+  return 1
+}
+
+print_zscaler_logo() {
+  local -a art=(
+    '███████╗███████╗ ██████╗ █████╗ ██╗     ███████╗██████╗ '
+    '╚══███╔╝██╔════╝██╔════╝██╔══██╗██║     ██╔════╝██╔══██╗'
+    '  ███╔╝ ███████╗██║     ███████║██║     █████╗  ██████╔╝'
+    ' ███╔╝  ╚════██║██║     ██╔══██║██║     ██╔══╝  ██╔══██╗'
+    '███████╗███████║╚██████╗██║  ██║███████╗███████╗██║  ██║'
+    '╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝'
+  )
+  local width=0 line pad=2 inner i
+  for line in "${art[@]}"; do
+    [ "${#line}" -gt "$width" ] && width="${#line}"
+  done
+  inner=$((width + pad * 2))
+
+  if ! logo_supports_truecolor; then
+    echo
+    printf '  +'
+    for ((i = 0; i < inner; i++)); do printf '-'; done
+    printf '+\n'
+    for line in "${art[@]}"; do
+      printf '  |'
+      for ((i = 0; i < pad; i++)); do printf ' '; done
+      printf '%s' "$line"
+      for ((i = ${#line}; i < width + pad; i++)); do printf ' '; done
+      printf '|\n'
+    done
+    printf '  +'
+    for ((i = 0; i < inner; i++)); do printf '-'; done
+    printf '+\n'
+    echo
+    return
+  fi
+
+  local reset=$'\033[0m'
+  local border shadow_color
+  border="$(logo_rgb 51 85 153)"
+  shadow_color="$(logo_rgb 0 61 153)"
+  local start_r=85 start_g=204 start_b=255
+  local end_r=0 end_g=61 end_b=153
+  local denom=$((width > 1 ? width - 1 : 1))
+  local blank padded ch t rr gg bb last_r=-1 last_g=-1 last_b=-1 shadow
+
+  blank=$(printf '%*s' "$width" '')
+  shadow=$blank
+  shadow=${shadow// /░}
+
+  echo
+  printf '  %s╭' "$border"
+  for ((i = 0; i < inner; i++)); do printf '─'; done
+  printf '╮%s\n' "$reset"
+  printf '  %s│%s' "$border" "$reset"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s' "$blank"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s│%s\n' "$border" "$reset"
+  for line in "${art[@]}"; do
+    printf '  %s│%s' "$border" "$reset"
+    for ((i = 0; i < pad; i++)); do printf ' '; done
+    padded=$(printf '%-*s' "$width" "$line")
+    last_r=-1 last_g=-1 last_b=-1
+    for ((i = 0; i < width; i++)); do
+      ch="${padded:$i:1}"
+      if [ "$ch" = ' ' ]; then
+        printf '%s' "$ch"
+        continue
+      fi
+      t=$((i * 1000 / denom))
+      rr=$((start_r + (end_r - start_r) * t / 1000))
+      gg=$((start_g + (end_g - start_g) * t / 1000))
+      bb=$((start_b + (end_b - start_b) * t / 1000))
+      if [ "$rr" != "$last_r" ] || [ "$gg" != "$last_g" ] || [ "$bb" != "$last_b" ]; then
+        printf '%s' "$(logo_rgb "$rr" "$gg" "$bb")"
+        last_r=$rr
+        last_g=$gg
+        last_b=$bb
+      fi
+      printf '%s' "$ch"
+    done
+    printf '%s' "$reset"
+    for ((i = 0; i < pad; i++)); do printf ' '; done
+    printf '%s│%s\n' "$border" "$reset"
+  done
+  printf '  %s│%s' "$border" "$reset"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s%s%s' "$shadow_color" "$shadow" "$reset"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s│%s\n' "$border" "$reset"
+  printf '  %s│%s' "$border" "$reset"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s' "$blank"
+  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s│%s\n' "$border" "$reset"
+  printf '  %s╰' "$border"
+  for ((i = 0; i < inner; i++)); do printf '─'; done
+  printf '╯%s\n' "$reset"
+  echo
+}
+
 # Prints the comment at the top of this file, from its third line.
+
 usage() {
   awk 'NR >= 3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
@@ -1999,6 +2116,12 @@ destroy() {
 trap cleanup EXIT
 trap interrupted INT
 
+case "$ACTION" in
+  preview | deploy | watch | outputs | destroy | logo | "" | help | -h | --help)
+    print_zscaler_logo
+    ;;
+esac
+
 # Without a resource group, the values of a preview or a deployment are asked for in the
 # terminal. Where nothing can be asked, the answers of an earlier run are used.
 case "$ACTION" in
@@ -2016,6 +2139,9 @@ case "$ACTION" in
 esac
 
 case "$ACTION" in
+  logo)
+    exit 0
+    ;;
   preview)
     prepare
     echo "Preview of the deployment. Nothing is created or changed."
