@@ -1,12 +1,12 @@
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/zscaler/nss-azure-deploy)](https://github.com/zscaler/nss-azure-deploy/releases)
-[![License](https://img.shields.io/github/license/zscaler/nss-azure-deploy?color=blue)](https://github.com/zscaler/nss-azure-deploy/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/zscaler/zscaler-nss-azure-bicep?color=blue)](https://github.com/zscaler/nss-azure-deploy/blob/master/LICENSE)
 [![Zscaler Community](https://img.shields.io/badge/zscaler-community-blue)](https://community.zscaler.com/)
 
 # Zscaler NSS Azure Bicep Deployment
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fnss-azure-deploy%2Fmaster%2Fazuredeploy.json)
-[![Deploy to Azure Gov](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazuregov.svg)](https://portal.azure.us/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fnss-azure-deploy%2Fmaster%2Fazuredeploy.json)
-[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg?sanitize=true)](http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fnss-azure-deploy%2Fmaster%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
+[![Deploy to Azure Gov](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/deploytoazuregov.svg)](https://portal.azure.us/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
+[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg?sanitize=true)](http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2Fzscaler%2Fzscaler-nss-azure-bicep%2Fmaster%2Fazuredeploy.json)
 
 ## Overview
 
