@@ -1,5 +1,5 @@
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/zscaler/nss-azure-deploy)](https://github.com/zscaler/nss-azure-deploy/releases)
-[![License](https://img.shields.io/github/license/zscaler/zscaler-nss-azure-bicep?color=blue)](https://github.com/zscaler/nss-azure-deploy/blob/master/LICENSE)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/zscaler/zscaler-nss-azure-bicep)](https://github.com/zscaler/zscaler-nss-azure-bicep/releases)
+[![License](https://img.shields.io/github/license/zscaler/zscaler-nss-azure-bicep?color=blue)](https://github.com/zscaler/zscaler-nss-azure-bicep/blob/master/LICENSE)
 [![Zscaler Community](https://img.shields.io/badge/zscaler-community-blue)](https://community.zscaler.com/)
 
 # Zscaler NSS Azure Bicep Deployment
@@ -103,8 +103,8 @@ To deploy from the Azure Portal, or with your own `az` or Azure PowerShell comma
 #### Step 2: Get the repository
 
 ```bash
-git clone https://github.com/zscaler/nss-azure-deploy.git
-cd nss-azure-deploy
+git clone https://github.com/zscaler/zscaler-nss-azure-bicep.git
+cd zscaler-nss-azure-bicep
 ```
 
 All commands below are run from this directory.
@@ -827,7 +827,7 @@ See [CLAUDE.md](CLAUDE.md) for the conventions used in the Bicep code.
 
 ## Support and Reporting Issues
 
-Support for this deployment is made available exclusively through Github repo issue tracking.  You are also welcome to contact the contributors directly via their provided contact information.  If you find a bug, please open an issue against this repo [here](https://github.com/zscaler/nss-azure-deploy/issues).
+Support for this deployment is made available exclusively through Github repo issue tracking.  You are also welcome to contact the contributors directly via their provided contact information.  If you find a bug, please open an issue against this repo [here](https://github.com/zscaler/zscaler-nss-azure-bicep/issues).
 
 ## Contributors
 
@@ -838,7 +838,7 @@ Zscaler is actively contributing to and maintaining this repo.
 
 ## Licensing
 
-This work is released under the MIT license. A copy of the license is provided in the [LICENSE](https://github.com/zscaler/nss-azure-deploy/blob/master/LICENSE) file.
+This work is released under the MIT license. A copy of the license is provided in the [LICENSE](https://github.com/zscaler/zscaler-nss-azure-bicep/blob/master/LICENSE) file.
 
 ## References
 
