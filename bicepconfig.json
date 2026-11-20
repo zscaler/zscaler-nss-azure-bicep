@@ -1,0 +1,21 @@
+{
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "rules": {
+        "explicit-values-for-loc-params": {
+          "level": "warning"
+        },
+        "no-hardcoded-location": {
+          "level": "warning"
+        },
+        "use-recent-api-versions": {
+          "level": "warning"
+        },
+        "what-if-short-circuiting": {
+          "level": "warning"
+        }
+      }
+    }
+  }
+}

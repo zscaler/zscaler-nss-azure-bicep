@@ -1,0 +1,2037 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.49.2.45890",
+      "templateHash": "11890393584478862321"
+    },
+    "name": "Zscaler NSS on Azure",
+    "description": "Deploys a single Zscaler Nanolog Streaming Service (NSS) virtual machine with its networking and a managed OS disk imported from the Zscaler NSS VHD. Optionally registers the VM in ZIA and installs its SSL certificate."
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    "vhdRegion": {
+      "type": "string",
+      "allowedValues": [
+        "znssprod",
+        "znssprodeu",
+        "znssprodau",
+        "zsgovnsstexas",
+        "zsgovnssarizona",
+        "zsgovnssiowa",
+        "zsgovnssvirginia"
+      ],
+      "metadata": {
+        "description": "Zscaler NSS VHD source region. Options: znssprod (US Commercial), znssprodeu (Europe), znssprodau (Australia), zsgovnsstexas (US Gov Texas), zsgovnssarizona (US Gov Arizona), zsgovnssiowa (US Gov Iowa), zsgovnssvirginia (US Gov Virginia)."
+      }
+    },
+    "sasToken": {
+      "type": "securestring",
+      "minLength": 1,
+      "metadata": {
+        "description": "SAS token for the Zscaler NSS VHD in the selected VHD region. Contact Zscaler Support to receive the token. Format: sp=r&st=<start>&se=<expiry>&spr=https&sv=<version>&sig=<signature>&sr=b"
+      }
+    },
+    "vNetNewOrExisting": {
+      "type": "string",
+      "defaultValue": "new",
+      "allowedValues": [
+        "new",
+        "existing"
+      ],
+      "metadata": {
+        "description": "Specify whether to create a new or use an existing virtual network for the VM."
+      }
+    },
+    "stgNewOrExisting": {
+      "type": "string",
+      "defaultValue": "new",
+      "allowedValues": [
+        "new",
+        "existing"
+      ],
+      "metadata": {
+        "description": "Specify whether to create a new or use an existing storage account to stage the NSS VHD."
+      }
+    },
+    "nameStorageAccount": {
+      "type": "string",
+      "defaultValue": "",
+      "maxLength": 24,
+      "metadata": {
+        "description": "Name of the existing storage account to use. It must be in the deployment resource group. Only required when stgNewOrExisting is set to existing."
+      }
+    },
+    "virtualNetworkName": {
+      "type": "string",
+      "defaultValue": "Zscaler-NSS-VNET",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the virtual network. If using existing, specify the existing virtual network name. Must be 2-64 characters, begin with a letter or number, and end with a letter, number or underscore."
+      }
+    },
+    "virtualNetworkResourceGroup": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of the existing virtual network. Only used when vNetNewOrExisting is set to existing."
+      }
+    },
+    "vNetAddressRange": {
+      "type": "string",
+      "defaultValue": "192.168.100.0/24",
+      "metadata": {
+        "description": "Address range of the new virtual network. Not used when vNetNewOrExisting is set to existing."
+      }
+    },
+    "subnetName": {
+      "type": "string",
+      "defaultValue": "Zscaler-NSS-Subnet",
+      "minLength": 1,
+      "maxLength": 80,
+      "metadata": {
+        "description": "Name of the service subnet. Must be 1-80 characters."
+      }
+    },
+    "subnetName2": {
+      "type": "string",
+      "defaultValue": "Zscaler-NSS-MGMT-Subnet",
+      "minLength": 1,
+      "maxLength": 80,
+      "metadata": {
+        "description": "Name of the management subnet. Must be 1-80 characters."
+      }
+    },
+    "subnetAddressRange": {
+      "type": "string",
+      "defaultValue": "192.168.100.0/25",
+      "metadata": {
+        "description": "Address range of the new service subnet. Not used when vNetNewOrExisting is set to existing."
+      }
+    },
+    "subnetAddressRange2": {
+      "type": "string",
+      "defaultValue": "192.168.100.128/28",
+      "metadata": {
+        "description": "Address range of the new management subnet. Not used when vNetNewOrExisting is set to existing."
+      }
+    },
+    "vmName": {
+      "type": "string",
+      "defaultValue": "Zscaler-NSS-VM",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the virtual machine. Must be 1-64 characters."
+      }
+    },
+    "virtualMachineSize": {
+      "type": "string",
+      "defaultValue": "Standard_D2_v4",
+      "allowedValues": [
+        "Standard_D2_v4",
+        "Standard_D4_v4",
+        "Standard_D8_v4",
+        "Standard_D16_v4"
+      ],
+      "metadata": {
+        "description": "Size of the VM."
+      }
+    },
+    "publicIpSku": {
+      "type": "string",
+      "defaultValue": "Standard",
+      "allowedValues": [
+        "Standard"
+      ],
+      "metadata": {
+        "description": "SKU for the public IP addresses, the public IP prefix and the NAT gateway. Azure retired the Basic SKU, so Standard is the only supported value."
+      }
+    },
+    "sshSourceAddressPrefix": {
+      "type": "string",
+      "defaultValue": "*",
+      "metadata": {
+        "description": "Source IP address or CIDR range allowed for SSH access. For security, restrict this to your admin IP range (for example 203.0.113.0/24). The default * allows access from any IP and is not recommended for production."
+      }
+    },
+    "installNssCertificate": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Register the VM in ZIA and install its SSL certificate after the VM is deployed: find or create the NSS server object, download its certificate, install it on the VM and start NSS, over SSH from inside the virtual network. Requires nssVmPassword, Zscaler API credentials (OneAPI or legacy ZIA) and permission to create role assignments in the resource group. When false, none of the parameters below are used."
+      }
+    },
+    "nssServerName": {
+      "type": "string",
+      "defaultValue": "[parameters('vmName')]",
+      "minLength": 1,
+      "metadata": {
+        "description": "Name of the NSS server object in ZIA. An NSS server with this name is reused; otherwise it is created. Its certificate must be installed on only one active NSS VM. Only used when installNssCertificate is true."
+      }
+    },
+    "nssServerType": {
+      "type": "string",
+      "defaultValue": "NSS_FOR_WEB",
+      "allowedValues": [
+        "SOFTWARE_AA_FLAG",
+        "NSS_FOR_WEB",
+        "NSS_FOR_FIREWALL",
+        "VZEN",
+        "VZEN_SME",
+        "VZEN_SMLB",
+        "PINNED_NSS",
+        "MD5_CAPABLE",
+        "ADP",
+        "ZIRSVR",
+        "NSS_FOR_ZPA"
+      ],
+      "metadata": {
+        "description": "Type of the NSS server object, used when it is created. The deployment does not activate the new object; activate the change in ZIA. Only used when installNssCertificate is true."
+      }
+    },
+    "allowHealthyNssServer": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Install the certificate even when ZIA reports an existing NSS server object as healthy, which means an NSS VM is already using that certificate. Only used when installNssCertificate is true."
+      }
+    },
+    "nssVmPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Password of the zsroot account on the NSS VM, used to copy and install the certificate over SSH. Required when installNssCertificate is true."
+      }
+    },
+    "zscalerClientId": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "OneAPI client ID. Set the OneAPI parameters or the legacy ZIA API parameters, not both. Only used when installNssCertificate is true."
+      }
+    },
+    "zscalerClientSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "OneAPI client secret. Leave empty when zscalerPrivateKey is used. Only used when installNssCertificate is true."
+      }
+    },
+    "zscalerPrivateKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "OneAPI private key in PEM format. Leave empty when zscalerClientSecret is used. Only used when installNssCertificate is true."
+      }
+    },
+    "zscalerVanityDomain": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Zidentity vanity domain for OneAPI, for example acme for acme.zslogin.net. Only used when installNssCertificate is true."
+      }
+    },
+    "zscalerCloud": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Zscaler cloud for OneAPI. Leave empty for the production cloud. Only used when installNssCertificate is true."
+      }
+    },
+    "ziaUsername": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Admin user name for the legacy ZIA API, for tenants that are not on Zidentity. Only used when installNssCertificate is true."
+      }
+    },
+    "ziaPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Admin password for the legacy ZIA API. Only used when installNssCertificate is true."
+      }
+    },
+    "ziaApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "API key for the legacy ZIA API. Only used when installNssCertificate is true."
+      }
+    },
+    "ziaCloud": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "ZIA cloud name for the legacy ZIA API, for example zscalertwo. Only used when installNssCertificate is true."
+      }
+    },
+    "certificateSubnetName": {
+      "type": "string",
+      "defaultValue": "Zscaler-NSS-Certificate-Subnet",
+      "minLength": 1,
+      "maxLength": 80,
+      "metadata": {
+        "description": "Name of the subnet the certificate deployment script runs in. With a new virtual network it is created. With an existing virtual network it must already exist, be delegated to Microsoft.ContainerInstance/containerGroups, have the Microsoft.Storage service endpoint and have outbound internet access. Only used when installNssCertificate is true."
+      }
+    },
+    "certificateSubnetAddressRange": {
+      "type": "string",
+      "defaultValue": "192.168.100.144/28",
+      "metadata": {
+        "description": "Address range of the new certificate subnet. Not used when vNetNewOrExisting is set to existing or installNssCertificate is false."
+      }
+    },
+    "certificateForceUpdateTag": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Change this value to run the certificate installation again when no other parameter changed. Only used when installNssCertificate is true."
+      }
+    }
+  },
+  "variables": {
+    "createVirtualNetwork": "[equals(parameters('vNetNewOrExisting'), 'new')]",
+    "createStorageAccount": "[equals(parameters('stgNewOrExisting'), 'new')]",
+    "vhdStorageAccountName": "[if(variables('createStorageAccount'), format('vhdstorage{0}', uniqueString(subscription().id, resourceGroup().id)), parameters('nameStorageAccount'))]",
+    "certificateStorageAccountName": "[format('nsscert{0}', uniqueString(subscription().id, resourceGroup().id, parameters('vmName')))]",
+    "certificateIdentityName": "[format('{0}-certificate-identity', parameters('vmName'))]"
+  },
+  "resources": {
+    "existingVirtualNetwork::serviceSubnet": {
+      "condition": "[not(variables('createVirtualNetwork'))]",
+      "existing": true,
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "apiVersion": "2025-05-01",
+      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
+      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('subnetName'))]"
+    },
+    "existingVirtualNetwork::managementSubnet": {
+      "condition": "[not(variables('createVirtualNetwork'))]",
+      "existing": true,
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "apiVersion": "2025-05-01",
+      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
+      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('subnetName2'))]"
+    },
+    "existingVirtualNetwork::certificateSubnet": {
+      "condition": "[and(not(variables('createVirtualNetwork')), parameters('installNssCertificate'))]",
+      "existing": true,
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "apiVersion": "2025-05-01",
+      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
+      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('certificateSubnetName'))]"
+    },
+    "existingVirtualNetwork": {
+      "condition": "[not(variables('createVirtualNetwork'))]",
+      "existing": true,
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2025-05-01",
+      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
+      "name": "[parameters('virtualNetworkName')]"
+    },
+    "networkSecurityGroup": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmName": {
+            "value": "[parameters('vmName')]"
+          },
+          "sshSourceAddressPrefix": {
+            "value": "[parameters('sshSourceAddressPrefix')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "5168896653746739703"
+            },
+            "description": "Network security group shared by the NSS network interfaces and the service subnet."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the network security group."
+              }
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NSS virtual machine. The network security group is named <vmName>-NSG."
+              }
+            },
+            "sshSourceAddressPrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Source IP address or CIDR range allowed to reach the NSS management interface over SSH."
+              }
+            }
+          },
+          "variables": {
+            "outboundRules": [
+              {
+                "name": "z-smca-rule",
+                "description": "Allow SMCA",
+                "protocol": "Tcp",
+                "destinationPort": "9422",
+                "destinationAddressPrefix": "*",
+                "priority": 101
+              },
+              {
+                "name": "z-remotesupport-rule",
+                "description": "Allow Remote Support",
+                "protocol": "Tcp",
+                "destinationPort": "12002",
+                "destinationAddressPrefix": "199.168.148.0/24",
+                "priority": 102
+              },
+              {
+                "name": "z-nanolog-rule",
+                "description": "Allow Nanolog",
+                "protocol": "Tcp",
+                "destinationPort": "9431",
+                "destinationAddressPrefix": "*",
+                "priority": 103
+              },
+              {
+                "name": "z-dns-rule",
+                "description": "Allow DNS",
+                "protocol": "*",
+                "destinationPort": "53",
+                "destinationAddressPrefix": "*",
+                "priority": 104
+              },
+              {
+                "name": "z-ntp-rule",
+                "description": "Allow NTP",
+                "protocol": "*",
+                "destinationPort": "123",
+                "destinationAddressPrefix": "*",
+                "priority": 105
+              },
+              {
+                "name": "z-cdss-rule",
+                "description": "Allow SMCDSS",
+                "protocol": "Tcp",
+                "destinationPort": "443",
+                "destinationAddressPrefix": "*",
+                "priority": 106
+              }
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-NSG', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": "[concat(createArray(createObject('name', 'z-ssh-rule', 'properties', createObject('description', 'Allow SSH from specified source address prefix', 'direction', 'Inbound', 'access', 'Allow', 'priority', 101, 'protocol', 'Tcp', 'sourceAddressPrefix', parameters('sshSourceAddressPrefix'), 'sourcePortRange', '*', 'destinationAddressPrefix', '*', 'destinationPortRange', '22'))), map(variables('outboundRules'), lambda('rule', createObject('name', lambdaVariables('rule').name, 'properties', createObject('description', lambdaVariables('rule').description, 'direction', 'Outbound', 'access', 'Allow', 'priority', lambdaVariables('rule').priority, 'protocol', lambdaVariables('rule').protocol, 'sourceAddressPrefix', '*', 'sourcePortRange', '*', 'destinationAddressPrefix', lambdaVariables('rule').destinationAddressPrefix, 'destinationPortRange', lambdaVariables('rule').destinationPort)))))]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the network security group."
+              },
+              "value": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-NSG', parameters('vmName')))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the network security group."
+              },
+              "value": "[format('{0}-NSG', parameters('vmName'))]"
+            }
+          }
+        }
+      }
+    },
+    "virtualNetwork": {
+      "condition": "[variables('createVirtualNetwork')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmName": {
+            "value": "[parameters('vmName')]"
+          },
+          "virtualNetworkName": {
+            "value": "[parameters('virtualNetworkName')]"
+          },
+          "addressPrefix": {
+            "value": "[parameters('vNetAddressRange')]"
+          },
+          "serviceSubnetName": {
+            "value": "[parameters('subnetName')]"
+          },
+          "serviceSubnetAddressPrefix": {
+            "value": "[parameters('subnetAddressRange')]"
+          },
+          "managementSubnetName": {
+            "value": "[parameters('subnetName2')]"
+          },
+          "managementSubnetAddressPrefix": {
+            "value": "[parameters('subnetAddressRange2')]"
+          },
+          "networkSecurityGroupId": {
+            "value": "[reference('networkSecurityGroup').outputs.id.value]"
+          },
+          "publicIpSku": {
+            "value": "[parameters('publicIpSku')]"
+          },
+          "createCertificateSubnet": {
+            "value": "[parameters('installNssCertificate')]"
+          },
+          "certificateSubnetName": {
+            "value": "[parameters('certificateSubnetName')]"
+          },
+          "certificateSubnetAddressPrefix": {
+            "value": "[parameters('certificateSubnetAddressRange')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "8632535197674090762"
+            },
+            "description": "New virtual network for NSS: a service subnet behind a NAT gateway, a management subnet and, optionally, a subnet for the NSS certificate deployment script."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the network resources."
+              }
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NSS virtual machine. Used as the prefix for the NAT gateway and its public IP resources."
+              }
+            },
+            "virtualNetworkName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the virtual network to create."
+              }
+            },
+            "addressPrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Address range of the virtual network, in CIDR notation."
+              }
+            },
+            "serviceSubnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the service subnet."
+              }
+            },
+            "serviceSubnetAddressPrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Address range of the service subnet, in CIDR notation."
+              }
+            },
+            "managementSubnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the management subnet."
+              }
+            },
+            "managementSubnetAddressPrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Address range of the management subnet, in CIDR notation."
+              }
+            },
+            "networkSecurityGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the network security group to associate with the service subnet."
+              }
+            },
+            "publicIpSku": {
+              "type": "string",
+              "metadata": {
+                "description": "SKU of the NAT gateway, its public IP address and its public IP prefix."
+              }
+            },
+            "createCertificateSubnet": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Create the subnet the NSS certificate deployment script runs in."
+              }
+            },
+            "certificateSubnetName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Name of the subnet for the NSS certificate deployment script."
+              }
+            },
+            "certificateSubnetAddressPrefix": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Address range of the subnet for the NSS certificate deployment script, in CIDR notation."
+              }
+            }
+          },
+          "variables": {
+            "certificateSubnets": "[if(parameters('createCertificateSubnet'), createArray(createObject('name', parameters('certificateSubnetName'), 'properties', createObject('addressPrefix', parameters('certificateSubnetAddressPrefix'), 'natGateway', createObject('id', resourceId('Microsoft.Network/natGateways', format('{0}-NATGW', parameters('vmName')))), 'serviceEndpoints', createArray(createObject('service', 'Microsoft.Storage')), 'delegations', createArray(createObject('name', 'Microsoft.ContainerInstance.containerGroups', 'properties', createObject('serviceName', 'Microsoft.ContainerInstance/containerGroups')))))), createArray())]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-SRVC-IP', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('publicIpSku')]"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "publicIPAddressVersion": "IPv4"
+              }
+            },
+            {
+              "type": "Microsoft.Network/publicIPPrefixes",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-PIP', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('publicIpSku')]"
+              },
+              "properties": {
+                "prefixLength": 31,
+                "publicIPAddressVersion": "IPv4"
+              }
+            },
+            {
+              "type": "Microsoft.Network/natGateways",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-NATGW', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('publicIpSku')]"
+              },
+              "properties": {
+                "idleTimeoutInMinutes": 4,
+                "publicIpAddresses": [
+                  {
+                    "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-SRVC-IP', parameters('vmName')))]"
+                  }
+                ],
+                "publicIpPrefixes": [
+                  {
+                    "id": "[resourceId('Microsoft.Network/publicIPPrefixes', format('{0}-PIP', parameters('vmName')))]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPPrefixes', format('{0}-PIP', parameters('vmName')))]",
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-SRVC-IP', parameters('vmName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2025-05-01",
+              "name": "[parameters('virtualNetworkName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('addressPrefix')]"
+                  ]
+                },
+                "subnets": "[concat(createArray(createObject('name', parameters('serviceSubnetName'), 'properties', createObject('addressPrefix', parameters('serviceSubnetAddressPrefix'), 'networkSecurityGroup', createObject('id', parameters('networkSecurityGroupId')), 'natGateway', createObject('id', resourceId('Microsoft.Network/natGateways', format('{0}-NATGW', parameters('vmName')))))), createObject('name', parameters('managementSubnetName'), 'properties', createObject('addressPrefix', parameters('managementSubnetAddressPrefix'), 'privateEndpointNetworkPolicies', 'Enabled', 'privateLinkServiceNetworkPolicies', 'Enabled'))), variables('certificateSubnets'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/natGateways', format('{0}-NATGW', parameters('vmName')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "serviceSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the service subnet."
+              },
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('serviceSubnetName'))]"
+            },
+            "managementSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the management subnet."
+              },
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('managementSubnetName'))]"
+            },
+            "certificateSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the subnet for the NSS certificate deployment script. Empty when the subnet is not created."
+              },
+              "value": "[if(parameters('createCertificateSubnet'), resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName')), '')]"
+            },
+            "servicePublicIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Public IP address of the NAT gateway used by the service subnet."
+              },
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-SRVC-IP', parameters('vmName'))), '2025-05-01').ipAddress]"
+            },
+            "natGatewayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NAT gateway."
+              },
+              "value": "[format('{0}-NATGW', parameters('vmName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "networkSecurityGroup"
+      ]
+    },
+    "storageAccount": {
+      "condition": "[variables('createStorageAccount')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('storageAccount-{0}', uniqueString('storageAccount', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "name": {
+            "value": "[variables('vhdStorageAccountName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "18211363321382900100"
+            },
+            "description": "Storage account used to stage the NSS OS VHD before it is imported as a managed disk."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the storage account."
+              }
+            },
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 24,
+              "metadata": {
+                "description": "Globally unique name of the storage account."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2025-06-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              }
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the storage account."
+              },
+              "value": "[parameters('name')]"
+            }
+          }
+        }
+      }
+    },
+    "vhdCopy": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('vhdCopy-{0}', uniqueString('vhdCopy', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmName": {
+            "value": "[parameters('vmName')]"
+          },
+          "vhdRegion": {
+            "value": "[parameters('vhdRegion')]"
+          },
+          "sasToken": {
+            "value": "[parameters('sasToken')]"
+          },
+          "storageAccountName": {
+            "value": "[variables('vhdStorageAccountName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "1758810666500392169"
+            },
+            "description": "Copies the Zscaler NSS OS VHD from Zscaler storage into a container of an existing storage account."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the deployment script."
+              }
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NSS virtual machine. Used to name the copied VHD and the deployment script."
+              }
+            },
+            "vhdRegion": {
+              "type": "string",
+              "metadata": {
+                "description": "Zscaler storage account that hosts the NSS VHD for the selected region."
+              }
+            },
+            "sasToken": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SAS token issued by Zscaler Support for the selected VHD region, with or without the leading question mark."
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the storage account, in this resource group, that receives the VHD. It must already exist and allow shared key access."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "<#\n.SYNOPSIS\n    Copies the Zscaler NSS OS VHD into the deployment's storage account.\n\n.DESCRIPTION\n    Runs inside the Microsoft.Resources/deploymentScripts resource declared in\n    modules/vhd-copy.bicep, which embeds this file at build time.\n\n    Every input arrives as an environment variable so the SAS token and the\n    storage account key are never written to the deployment history or to the\n    script log.\n\n    The copy is skipped when the destination blob already holds a completed\n    copy, which keeps redeployments fast and independent of SAS token expiry.\n#>\n\n$ErrorActionPreference = 'Stop'\n\nfunction Get-RequiredSetting {\n    param([Parameter(Mandatory)][string] $Name)\n\n    $value = [Environment]::GetEnvironmentVariable($Name)\n    if ([string]::IsNullOrWhiteSpace($value)) {\n        throw \"Environment variable '$Name' is not set.\"\n    }\n    return $value\n}\n\n$sourceVhdUrl = Get-RequiredSetting 'SOURCE_VHD_URL'\n$sourceSasToken = Get-RequiredSetting 'SOURCE_SAS_TOKEN'\n$storageAccountName = Get-RequiredSetting 'DEST_STORAGE_ACCOUNT'\n$storageAccountKey = Get-RequiredSetting 'DEST_STORAGE_KEY'\n$storageEndpointSuffix = Get-RequiredSetting 'DEST_STORAGE_ENDPOINT_SUFFIX'\n$containerName = Get-RequiredSetting 'DEST_CONTAINER'\n$blobName = Get-RequiredSetting 'DEST_BLOB'\n\n$pollIntervalSeconds = 30\n\n$context = New-AzStorageContext `\n    -StorageAccountName $storageAccountName `\n    -StorageAccountKey $storageAccountKey `\n    -Endpoint $storageEndpointSuffix\n\n$destination = @{\n    Context   = $context\n    Container = $containerName\n    Blob      = $blobName\n}\n\n# Returns $null when the destination blob does not exist yet.\n# The blob is looked up by listing rather than by name, because asking for a missing blob raises\n# an error, and the deployment script service reports every recorded error, even a handled one.\nfunction Get-ExistingCopyState {\n    $existingBlob = Get-AzStorageBlob -Context $context -Container $containerName -Prefix $blobName |\n        Where-Object { $_.Name -eq $blobName }\n\n    if (-not $existingBlob) {\n        return $null\n    }\n    return Get-AzStorageBlobCopyState @destination\n}\n\n$copyState = Get-ExistingCopyState\n\nif ($copyState -and $copyState.Status -eq 'Success') {\n    Write-Output \"'$blobName' is already present in container '$containerName'. Skipping the copy.\"\n}\nelse {\n    if ($copyState -and $copyState.Status -eq 'Pending') {\n        Write-Output \"A copy of '$blobName' is already in progress. Waiting for it to finish.\"\n    }\n    else {\n        Write-Output \"Starting the copy of $sourceVhdUrl to '$containerName/$blobName'.\"\n        try {\n            Start-AzStorageBlobCopy `\n                -AbsoluteUri \"$sourceVhdUrl$sourceSasToken\" `\n                -DestContainer $containerName `\n                -DestBlob $blobName `\n                -DestContext $context `\n                -Force | Out-Null\n        }\n        catch {\n            $message = $_.Exception.Message.Replace($sourceSasToken, '?<redacted>')\n            throw \"Could not start the VHD copy. Check the VHD region and the SAS token. $message\"\n        }\n    }\n\n    do {\n        Start-Sleep -Seconds $pollIntervalSeconds\n        $copyState = Get-AzStorageBlobCopyState @destination\n        Write-Output ('VHD copy {0}: {1:N0} of {2:N0} bytes copied.' -f $copyState.Status, $copyState.BytesCopied, $copyState.TotalBytes)\n    } while ($copyState.Status -eq 'Pending')\n\n    if ($copyState.Status -ne 'Success') {\n        throw \"The VHD copy ended with status '$($copyState.Status)': $($copyState.StatusDescription)\"\n    }\n\n    Write-Output 'The VHD has been copied successfully.'\n}\n",
+            "nssImageName": "znss_5_2_osdisk.vhd",
+            "containerName": "zscalernssrprod",
+            "destinationBlobName": "[format('znss_{0}_osdisk.vhd', parameters('vmName'))]",
+            "isGovRegion": "[contains(parameters('vhdRegion'), 'gov')]",
+            "sourceBlobEndpoint": "[if(variables('isGovRegion'), format('https://{0}.blob.core.usgovcloudapi.net', parameters('vhdRegion')), format('https://{0}.blob.core.windows.net', parameters('vhdRegion')))]",
+            "sourceContainerName": "[if(variables('isGovRegion'), 'nss-disk', 'nss')]",
+            "sourceVhdUrl": "[format('{0}/{1}/{2}', variables('sourceBlobEndpoint'), variables('sourceContainerName'), variables('nssImageName'))]",
+            "sasQueryString": "[if(startsWith(parameters('sasToken'), '?'), parameters('sasToken'), format('?{0}', parameters('sasToken')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2025-06-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('containerName'))]",
+              "properties": {
+                "publicAccess": "None"
+              }
+            },
+            {
+              "type": "Microsoft.Resources/deploymentScripts",
+              "apiVersion": "2023-08-01",
+              "name": "[format('{0}-vhd-copy', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "kind": "AzurePowerShell",
+              "properties": {
+                "azPowerShellVersion": "15.4",
+                "scriptContent": "[variables('$fxv#0')]",
+                "environmentVariables": [
+                  {
+                    "name": "SOURCE_VHD_URL",
+                    "value": "[variables('sourceVhdUrl')]"
+                  },
+                  {
+                    "name": "SOURCE_SAS_TOKEN",
+                    "secureValue": "[variables('sasQueryString')]"
+                  },
+                  {
+                    "name": "DEST_STORAGE_ACCOUNT",
+                    "value": "[parameters('storageAccountName')]"
+                  },
+                  {
+                    "name": "DEST_STORAGE_KEY",
+                    "secureValue": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2025-06-01').keys[0].value]"
+                  },
+                  {
+                    "name": "DEST_STORAGE_ENDPOINT_SUFFIX",
+                    "value": "[environment().suffixes.storage]"
+                  },
+                  {
+                    "name": "DEST_CONTAINER",
+                    "value": "[variables('containerName')]"
+                  },
+                  {
+                    "name": "DEST_BLOB",
+                    "value": "[variables('destinationBlobName')]"
+                  }
+                ],
+                "timeout": "PT3H",
+                "cleanupPreference": "OnSuccess",
+                "retentionInterval": "P1D"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('containerName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vhdUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Blob URI of the copied NSS OS VHD."
+              },
+              "value": "[format('{0}{1}/{2}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2025-06-01').primaryEndpoints.blob, variables('containerName'), variables('destinationBlobName'))]"
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the storage account that holds the copied VHD."
+              },
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+            },
+            "copyScriptName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the deployment script that performed the copy."
+              },
+              "value": "[format('{0}-vhd-copy', parameters('vmName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "storageAccount"
+      ]
+    },
+    "virtualMachine": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmName": {
+            "value": "[parameters('vmName')]"
+          },
+          "virtualMachineSize": {
+            "value": "[parameters('virtualMachineSize')]"
+          },
+          "managementSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.managementSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName2'))))]",
+          "serviceSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.serviceSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))))]",
+          "networkSecurityGroupId": {
+            "value": "[reference('networkSecurityGroup').outputs.id.value]"
+          },
+          "publicIpSku": {
+            "value": "[parameters('publicIpSku')]"
+          },
+          "vhdUri": {
+            "value": "[reference('vhdCopy').outputs.vhdUri.value]"
+          },
+          "vhdStorageAccountId": {
+            "value": "[reference('vhdCopy').outputs.storageAccountId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "181182263067804068"
+            },
+            "description": "NSS virtual machine with its management public IP, two network interfaces and a managed OS disk imported from the staged VHD."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the virtual machine and its resources."
+              }
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the virtual machine. Also used as the prefix for the disk, network interface and public IP names."
+              }
+            },
+            "virtualMachineSize": {
+              "type": "string",
+              "metadata": {
+                "description": "Size of the virtual machine."
+              }
+            },
+            "managementSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the subnet for the management network interface."
+              }
+            },
+            "serviceSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the subnet for the service network interface."
+              }
+            },
+            "networkSecurityGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the network security group to associate with both network interfaces."
+              }
+            },
+            "publicIpSku": {
+              "type": "string",
+              "metadata": {
+                "description": "SKU of the management public IP address."
+              }
+            },
+            "vhdUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Blob URI of the NSS OS VHD to import as the managed OS disk."
+              }
+            },
+            "vhdStorageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the storage account that holds the NSS OS VHD."
+              }
+            }
+          },
+          "variables": {
+            "osDiskSizeGB": 600
+          },
+          "resources": {
+            "managementPublicIp": {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-MGMT-IP', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('publicIpSku')]"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "publicIPAddressVersion": "IPv4"
+              }
+            },
+            "managementNic": {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-MGMT-NIC', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "enableAcceleratedNetworking": false,
+                "enableIPForwarding": false,
+                "networkSecurityGroup": {
+                  "id": "[parameters('networkSecurityGroupId')]"
+                },
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "primary": true,
+                      "privateIPAllocationMethod": "Dynamic",
+                      "privateIPAddressVersion": "IPv4",
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-MGMT-IP', parameters('vmName')))]"
+                      },
+                      "subnet": {
+                        "id": "[parameters('managementSubnetId')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "managementPublicIp"
+              ]
+            },
+            "osDisk": {
+              "type": "Microsoft.Compute/disks",
+              "apiVersion": "2025-01-02",
+              "name": "[format('{0}-osdisk', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "properties": {
+                "osType": "Linux",
+                "hyperVGeneration": "V1",
+                "diskSizeGB": "[variables('osDiskSizeGB')]",
+                "creationData": {
+                  "createOption": "Import",
+                  "sourceUri": "[parameters('vhdUri')]",
+                  "storageAccountId": "[parameters('vhdStorageAccountId')]"
+                }
+              }
+            },
+            "virtualMachine": {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2025-04-01",
+              "name": "[parameters('vmName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('virtualMachineSize')]"
+                },
+                "storageProfile": {
+                  "osDisk": {
+                    "osType": "Linux",
+                    "createOption": "Attach",
+                    "caching": "ReadWrite",
+                    "managedDisk": {
+                      "id": "[resourceId('Microsoft.Compute/disks', format('{0}-osdisk', parameters('vmName')))]"
+                    }
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-MGMT-NIC', parameters('vmName')))]",
+                      "properties": {
+                        "primary": true
+                      }
+                    },
+                    {
+                      "id": "[reference('serviceNic').outputs.id.value]",
+                      "properties": {
+                        "primary": false
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "managementNic",
+                "osDisk",
+                "serviceNic"
+              ]
+            },
+            "serviceNicWithAzureAddress": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('serviceNicWithAzureAddress-{0}', uniqueString('serviceNicWithAzureAddress', deployment().name))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "vmName": {
+                    "value": "[parameters('vmName')]"
+                  },
+                  "subnetId": {
+                    "value": "[parameters('serviceSubnetId')]"
+                  },
+                  "networkSecurityGroupId": {
+                    "value": "[parameters('networkSecurityGroupId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.49.2.45890",
+                      "templateHash": "17605391344340091609"
+                    },
+                    "description": "Service network interface of the NSS virtual machine, with a private IP address that Azure picks or with a given static one."
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region for the network interface."
+                      }
+                    },
+                    "vmName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the virtual machine. Used as the prefix of the network interface name."
+                      }
+                    },
+                    "subnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the subnet for the service network interface."
+                      }
+                    },
+                    "networkSecurityGroupId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the network security group to associate with the network interface."
+                      }
+                    },
+                    "privateIpAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Private IP address to assign as a static address. Leave empty to let Azure pick an address."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/networkInterfaces",
+                      "apiVersion": "2025-05-01",
+                      "name": "[format('{0}-SRVC-NIC', parameters('vmName'))]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "networkSecurityGroup": {
+                          "id": "[parameters('networkSecurityGroupId')]"
+                        },
+                        "ipConfigurations": [
+                          {
+                            "name": "ipconfig1",
+                            "properties": {
+                              "primary": true,
+                              "privateIPAllocationMethod": "[if(empty(parameters('privateIpAddress')), 'Dynamic', 'Static')]",
+                              "privateIPAddress": "[if(empty(parameters('privateIpAddress')), null(), parameters('privateIpAddress'))]",
+                              "subnet": {
+                                "id": "[parameters('subnetId')]"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "id": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the service network interface."
+                      },
+                      "value": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-SRVC-NIC', parameters('vmName')))]"
+                    },
+                    "privateIpAddress": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Private IP address of the service network interface."
+                      },
+                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-SRVC-NIC', parameters('vmName'))), '2025-05-01').ipConfigurations[0].properties.privateIPAddress]"
+                    }
+                  }
+                }
+              }
+            },
+            "serviceNic": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('serviceNic-{0}', uniqueString('serviceNic', deployment().name))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "vmName": {
+                    "value": "[parameters('vmName')]"
+                  },
+                  "subnetId": {
+                    "value": "[parameters('serviceSubnetId')]"
+                  },
+                  "networkSecurityGroupId": {
+                    "value": "[parameters('networkSecurityGroupId')]"
+                  },
+                  "privateIpAddress": {
+                    "value": "[reference('serviceNicWithAzureAddress').outputs.privateIpAddress.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.49.2.45890",
+                      "templateHash": "17605391344340091609"
+                    },
+                    "description": "Service network interface of the NSS virtual machine, with a private IP address that Azure picks or with a given static one."
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region for the network interface."
+                      }
+                    },
+                    "vmName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the virtual machine. Used as the prefix of the network interface name."
+                      }
+                    },
+                    "subnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the subnet for the service network interface."
+                      }
+                    },
+                    "networkSecurityGroupId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the network security group to associate with the network interface."
+                      }
+                    },
+                    "privateIpAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Private IP address to assign as a static address. Leave empty to let Azure pick an address."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/networkInterfaces",
+                      "apiVersion": "2025-05-01",
+                      "name": "[format('{0}-SRVC-NIC', parameters('vmName'))]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "networkSecurityGroup": {
+                          "id": "[parameters('networkSecurityGroupId')]"
+                        },
+                        "ipConfigurations": [
+                          {
+                            "name": "ipconfig1",
+                            "properties": {
+                              "primary": true,
+                              "privateIPAllocationMethod": "[if(empty(parameters('privateIpAddress')), 'Dynamic', 'Static')]",
+                              "privateIPAddress": "[if(empty(parameters('privateIpAddress')), null(), parameters('privateIpAddress'))]",
+                              "subnet": {
+                                "id": "[parameters('subnetId')]"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "id": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the service network interface."
+                      },
+                      "value": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-SRVC-NIC', parameters('vmName')))]"
+                    },
+                    "privateIpAddress": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Private IP address of the service network interface."
+                      },
+                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-SRVC-NIC', parameters('vmName'))), '2025-05-01').ipConfigurations[0].properties.privateIPAddress]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "serviceNicWithAzureAddress"
+              ]
+            }
+          },
+          "outputs": {
+            "vmResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the virtual machine."
+              },
+              "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the virtual machine."
+              },
+              "value": "[parameters('vmName')]"
+            },
+            "osDiskResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the managed OS disk."
+              },
+              "value": "[resourceId('Microsoft.Compute/disks', format('{0}-osdisk', parameters('vmName')))]"
+            },
+            "managementPublicIpName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the management public IP resource."
+              },
+              "value": "[format('{0}-MGMT-IP', parameters('vmName'))]"
+            },
+            "managementPublicIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Public IP address of the NSS management interface."
+              },
+              "value": "[reference('managementPublicIp').ipAddress]"
+            },
+            "managementPrivateIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Private IP address of the NSS management interface."
+              },
+              "value": "[reference('managementNic').ipConfigurations[0].properties.privateIPAddress]"
+            },
+            "servicePrivateIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Static private IP address of the NSS service interface."
+              },
+              "value": "[reference('serviceNic').outputs.privateIpAddress.value]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "networkSecurityGroup",
+        "vhdCopy",
+        "virtualNetwork"
+      ]
+    },
+    "nssCertificateEnvironment": {
+      "condition": "[parameters('installNssCertificate')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('nssCertificateEnvironment-{0}', uniqueString('nssCertificateEnvironment', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "identityName": {
+            "value": "[variables('certificateIdentityName')]"
+          },
+          "storageAccountName": {
+            "value": "[variables('certificateStorageAccountName')]"
+          },
+          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.certificateSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName'))))]"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "5780381046458881240"
+            },
+            "description": "Private environment for the NSS certificate deployment script: its managed identity and the firewalled storage account it runs from."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the identity and the storage account."
+              }
+            },
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the user-assigned managed identity the deployment script runs as."
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 24,
+              "metadata": {
+                "description": "Globally unique name of the storage account that backs the deployment script."
+              }
+            },
+            "subnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the subnet the deployment script runs in. It must have the Microsoft.Storage service endpoint."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2024-11-30",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2025-06-01",
+              "name": "[parameters('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true,
+                "networkAcls": {
+                  "bypass": "AzureServices",
+                  "defaultAction": "Deny",
+                  "virtualNetworkRules": [
+                    {
+                      "id": "[parameters('subnetId')]",
+                      "action": "Allow"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2024-11-30').principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the user-assigned managed identity the deployment script runs as."
+              },
+              "value": "[parameters('identityName')]"
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the storage account that backs the deployment script."
+              },
+              "value": "[parameters('storageAccountName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "virtualNetwork"
+      ]
+    },
+    "nssCertificate": {
+      "condition": "[parameters('installNssCertificate')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('nssCertificate-{0}', uniqueString('nssCertificate', deployment().name))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmName": {
+            "value": "[parameters('vmName')]"
+          },
+          "identityName": {
+            "value": "[variables('certificateIdentityName')]"
+          },
+          "storageAccountName": {
+            "value": "[variables('certificateStorageAccountName')]"
+          },
+          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.certificateSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName'))))]",
+          "vmPrivateIpAddress": {
+            "value": "[reference('virtualMachine').outputs.managementPrivateIpAddress.value]"
+          },
+          "vmPassword": {
+            "value": "[parameters('nssVmPassword')]"
+          },
+          "serviceInterfaceAddress": {
+            "value": "[format('{0}/{1}', reference('virtualMachine').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
+          },
+          "serviceInterfaceGateway": {
+            "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
+          },
+          "nssServerName": {
+            "value": "[parameters('nssServerName')]"
+          },
+          "nssServerType": {
+            "value": "[parameters('nssServerType')]"
+          },
+          "allowHealthyNssServer": {
+            "value": "[parameters('allowHealthyNssServer')]"
+          },
+          "forceUpdateTag": {
+            "value": "[parameters('certificateForceUpdateTag')]"
+          },
+          "zscalerClientId": {
+            "value": "[parameters('zscalerClientId')]"
+          },
+          "zscalerClientSecret": {
+            "value": "[parameters('zscalerClientSecret')]"
+          },
+          "zscalerPrivateKey": {
+            "value": "[parameters('zscalerPrivateKey')]"
+          },
+          "zscalerVanityDomain": {
+            "value": "[parameters('zscalerVanityDomain')]"
+          },
+          "zscalerCloud": {
+            "value": "[parameters('zscalerCloud')]"
+          },
+          "ziaUsername": {
+            "value": "[parameters('ziaUsername')]"
+          },
+          "ziaPassword": {
+            "value": "[parameters('ziaPassword')]"
+          },
+          "ziaApiKey": {
+            "value": "[parameters('ziaApiKey')]"
+          },
+          "ziaCloud": {
+            "value": "[parameters('ziaCloud')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "5470972897421633542"
+            },
+            "description": "Configures the service interface of the NSS virtual machine, creates or reuses the NSS server object in ZIA, downloads its SSL certificate, installs it on the virtual machine, downloads the NSS binaries, starts NSS and enables its automatic start, over SSH from inside the virtual network."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the deployment script."
+              }
+            },
+            "vmName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NSS virtual machine. Used to name the deployment script."
+              }
+            },
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the user-assigned managed identity, in this resource group, the deployment script runs as."
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the storage account, in this resource group, that backs the deployment script. It must accept traffic from the script subnet."
+              }
+            },
+            "subnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the subnet the deployment script runs in. It must be delegated to Microsoft.ContainerInstance/containerGroups, reach the NSS management interface on SSH, and reach the Zscaler API and PyPI on the internet."
+              }
+            },
+            "vmPrivateIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Private IP address of the NSS management interface."
+              }
+            },
+            "vmPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Password of the zsroot account on the NSS virtual machine."
+              }
+            },
+            "serviceInterfaceAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "IP address of the NSS service interface with the prefix length of its subnet, for example 192.168.100.4/25. The script answers nss configure with it."
+              }
+            },
+            "serviceInterfaceGateway": {
+              "type": "string",
+              "metadata": {
+                "description": "Default gateway of the NSS service interface, which is the first address of its subnet. The script answers nss configure with it."
+              }
+            },
+            "nssServerName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NSS server object in ZIA. It is created when no NSS server with this name exists."
+              }
+            },
+            "nssServerType": {
+              "type": "string",
+              "metadata": {
+                "description": "Type of the NSS server object, used when it is created."
+              }
+            },
+            "allowHealthyNssServer": {
+              "type": "bool",
+              "metadata": {
+                "description": "Install the certificate even when ZIA reports an existing NSS server object as healthy."
+              }
+            },
+            "forceUpdateTag": {
+              "type": "string",
+              "metadata": {
+                "description": "Change this value to run the deployment script again when nothing else changed."
+              }
+            },
+            "zscalerClientId": {
+              "type": "securestring",
+              "metadata": {
+                "description": "OneAPI client ID. Leave empty to use the legacy ZIA API credentials."
+              }
+            },
+            "zscalerClientSecret": {
+              "type": "securestring",
+              "metadata": {
+                "description": "OneAPI client secret. Leave empty when a private key is used."
+              }
+            },
+            "zscalerPrivateKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "OneAPI private key in PEM format. Leave empty when a client secret is used."
+              }
+            },
+            "zscalerVanityDomain": {
+              "type": "string",
+              "metadata": {
+                "description": "Zidentity vanity domain for OneAPI."
+              }
+            },
+            "zscalerCloud": {
+              "type": "string",
+              "metadata": {
+                "description": "Zscaler cloud for OneAPI. Leave empty for the production cloud."
+              }
+            },
+            "ziaUsername": {
+              "type": "string",
+              "metadata": {
+                "description": "Admin user name for the legacy ZIA API."
+              }
+            },
+            "ziaPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Admin password for the legacy ZIA API."
+              }
+            },
+            "ziaApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "API key for the legacy ZIA API."
+              }
+            },
+            "ziaCloud": {
+              "type": "string",
+              "metadata": {
+                "description": "ZIA cloud name for the legacy ZIA API, for example zscalertwo."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "#!/usr/bin/env bash\n# Runs in the Azure CLI container of the deployment script in modules/nss-certificate.bicep.\n# It installs the Python packages the automation needs in a throwaway virtual environment and\n# runs install-nss-certificate.py, whose source Bicep inserts in place of the placeholder line.\n# All input is read from environment variables by the Python script.\nset -euo pipefail\n\nwork_dir=\"$(mktemp -d)\"\ntrap 'rm -rf \"$work_dir\"' EXIT\n\npython3 -m venv \"$work_dir/venv\"\n\n# install-nss-certificate.py downloads the certificate with nss_download_certificate of\n# zscaler-sdk-python, which needs release 1.11.5 or later.\n\"$work_dir/venv/bin/python\" -m pip install --quiet --disable-pip-version-check --no-cache-dir --retries 5 \\\n  'zscaler-sdk-python==1.11.5' \\\n  'paramiko==5.1.0'\n\ncat > \"$work_dir/install-nss-certificate.py\" <<'NSS_CERTIFICATE_PYTHON_SOURCE'\n__INSTALL_NSS_CERTIFICATE_PY__\nNSS_CERTIFICATE_PYTHON_SOURCE\n\n\"$work_dir/venv/bin/python\" \"$work_dir/install-nss-certificate.py\"\n",
+            "$fxv#1": "#!/usr/bin/env python3\n\"\"\"Registers the NSS virtual machine in ZIA, installs its SSL certificate and configures it.\n\nThe script finds the NSS server object by name in ZIA, or creates it, downloads the\ncertificate ZIP file of that object, copies it to the NSS virtual machine over SSH and\ninstalls it with `sudo nss install-cert`, as described in the Zscaler NSS deployment guide.\n\nBefore that, when the address and the gateway of the service interface are given, it answers\nthe questions of `sudo nss configure` with them. After the certificate, when asked to, it\ndownloads the NSS binaries with `sudo nss update-now`, starts NSS with `sudo nss start`, checks\nwith `sudo nss status` that it runs, and runs `sudo nss enable-autostart`.\n\nIt runs inside the deployment script of modules/nss-certificate.bicep and can also be run\nfrom a workstation that can reach the virtual machine on SSH. All input comes from\nenvironment variables, see read_settings(). It needs the paramiko package and\nzscaler-sdk-python 1.11.5 or later. Every call to ZIA goes through that SDK.\n\nIt is safe to run again: an NSS server object that already exists is reused, a certificate\nthat is already installed on the virtual machine is not installed again, a service\ninterface that already has the given values is not configured again, and an NSS that already\nruns is neither updated nor started again.\n\nThe script never activates the ZIA configuration. A new NSS server object stays a pending\nchange until the user activates it in ZIA.\n\"\"\"\n\nimport base64\nimport hashlib\nimport io\nimport ipaddress\nimport json\nimport os\nimport re\nimport socket\nimport sys\nimport time\nimport zipfile\n\nCERTIFICATE_FILE_NAME = \"NssCertificate.zip\"\nMARKER_FILE_NAME = \".nss-certificate-installed\"\nCONFIGURE_MARKER_FILE_NAME = \".nss-service-interface-configured\"\n# The questions of `nss configure`, as the NSS 5.2 image for Azure asks them, each with the most\n# times it may be asked in one run. A question is the last line of the output, without a line end.\n# The command lists the name servers one by one before it asks whether to add one.\nNAME_SERVER_QUESTION = (re.compile(r\"^nameserver:.*\\[n\\]:?\\s*$\"), 8)\nADD_NAME_SERVER_QUESTION = (re.compile(r\"^Do you wish to add a new nameserver\\?.*\\[n\\]:?\\s*$\"), 1)\nSERVICE_ADDRESS_QUESTION = (re.compile(r\"^smnet_dev \\(.*\\) \\[[^\\]]*\\]:?\\s*$\"), 1)\nSERVICE_GATEWAY_QUESTION = (re.compile(r\"^smnet_dflt_gw \\(.*\\) \\[[^\\]]*\\]:?\\s*$\"), 1)\nCONFIGURE_SUCCESS = \"Successfully Applied Changes\"\n# How long a command may sit on a line that is not a known question before the run gives up.\nQUESTION_WAIT_SECONDS = 30\n# The line `nss status` and `nss start` print when NSS runs, as the NSS 5.2 image for Azure prints it.\nRUNNING_STATUS = re.compile(r\"NSS service running with pid \\d+\")\n# NSS is asked for its status this long after `nss start`, in a new session, so a process that\n# ended together with the session that started it, or right after its start, is not taken as running.\nSTART_SETTLE_SECONDS = 10\n# Error codes of `nss update-now`, from \"Troubleshooting Deployed NSS Servers\" in the Zscaler help.\nUPDATE_ERRORS = {\n    96: \"the client certificate is invalid\",\n    97: \"a timeout occurred while contacting the upgrade server\",\n    99: \"a problem occurred while downloading and installing the latest version, and 'sudo nss force-update-now' \"\n    \"has to be run\",\n}\nSUDO_PROMPT = \"NSS-CERTIFICATE-SUDO-PASSWORD:\"\n# Every line this script logs starts with this mark. Azure returns the log of a deployment\n# script that runs in the Azure CLI container as one line, and the mark shows where a line began.\nLOG_MARK = \"==> \"\n# A command that sshd starts does not read the files a login reads, so its PATH can lack the\n# directory of the nss command. The PATH of a login shell is asked for with this mark, and\n# these directories are looked at when neither PATH has the command.\nPATH_MARK = \"NSS-CERTIFICATE-LOGIN-PATH=\"\nLOGIN_SHELL_SECONDS = 30\nNSS_DIRECTORIES = (\"/sc/bin\", \"/sc/sbin\", \"/usr/local/bin\", \"/usr/local/sbin\", \"/opt/zscaler/bin\")\nNSS_SERVER_TYPES = (\n    \"SOFTWARE_AA_FLAG\",\n    \"NSS_FOR_WEB\",\n    \"NSS_FOR_FIREWALL\",\n    \"VZEN\",\n    \"VZEN_SME\",\n    \"VZEN_SMLB\",\n    \"PINNED_NSS\",\n    \"MD5_CAPABLE\",\n    \"ADP\",\n    \"ZIRSVR\",\n    \"NSS_FOR_ZPA\",\n)\nHEALTHY_STATE = \"HEALTHY\"\n# The first zscaler-sdk-python release whose NSS servers API has nss_download_certificate.\nMINIMUM_SDK_VERSION = \"1.11.5\"\n\nONEAPI_VARIABLES = (\"ZSCALER_CLIENT_ID\", \"ZSCALER_CLIENT_SECRET\", \"ZSCALER_PRIVATE_KEY\", \"ZSCALER_VANITY_DOMAIN\")\nLEGACY_VARIABLES = (\"ZIA_USERNAME\", \"ZIA_PASSWORD\", \"ZIA_API_KEY\", \"ZIA_CLOUD\")\n\n\nclass AutomationError(Exception):\n    \"\"\"A failure with a message that is safe to show: it never contains a secret.\"\"\"\n\n\ndef log(message):\n    for line in str(message).splitlines() or [\"\"]:\n        print(f\"{LOG_MARK}{line}\", flush=True)\n\n\ndef _flag(env, name, default=False):\n    value = (env.get(name) or \"\").strip().lower()\n    if not value:\n        return default\n    if value in (\"true\", \"1\", \"yes\"):\n        return True\n    if value in (\"false\", \"0\", \"no\"):\n        return False\n    raise AutomationError(f\"{name} must be true or false.\")\n\n\ndef _number(env, name, default):\n    value = (env.get(name) or \"\").strip()\n    if not value:\n        return default\n    if not value.isdigit() or int(value) < 1:\n        raise AutomationError(f\"{name} must be a positive whole number.\")\n    return int(value)\n\n\ndef _check_service_interface(address, gateway):\n    \"\"\"The two values are typed into `nss configure`, so only plain IPv4 values are let through.\"\"\"\n    if not address and not gateway:\n        return\n    if not address or not gateway:\n        raise AutomationError(\n            \"NSS_SERVICE_INTERFACE_ADDRESS and NSS_SERVICE_INTERFACE_GATEWAY must be set together, or not at all.\"\n        )\n    try:\n        if not re.fullmatch(r\"[0-9.]+/[0-9]+\", address):\n            raise ValueError\n        interface = ipaddress.IPv4Interface(address)\n    except ValueError:\n        raise AutomationError(\n            \"NSS_SERVICE_INTERFACE_ADDRESS must be an IPv4 address with a prefix length, for example 192.168.100.4/25.\"\n        ) from None\n    try:\n        if not re.fullmatch(r\"[0-9.]+\", gateway):\n            raise ValueError\n        gateway_address = ipaddress.IPv4Address(gateway)\n    except ValueError:\n        raise AutomationError(\n            \"NSS_SERVICE_INTERFACE_GATEWAY must be an IPv4 address, for example 192.168.100.1.\"\n        ) from None\n    if gateway_address not in interface.network or gateway_address == interface.ip:\n        raise AutomationError(\n            f\"NSS_SERVICE_INTERFACE_GATEWAY ({gateway}) must be another address in the subnet of \"\n            f\"NSS_SERVICE_INTERFACE_ADDRESS ({interface.network}).\"\n        )\n\n\ndef read_settings(env=None):\n    \"\"\"Reads and validates the environment variables. Empty values count as not set.\"\"\"\n    env = os.environ if env is None else env\n\n    def text(name, default=\"\"):\n        return (env.get(name) or \"\").strip() or default\n\n    settings = {\n        \"vm_host\": text(\"NSS_VM_HOST\"),\n        \"vm_port\": _number(env, \"NSS_VM_PORT\", 22),\n        \"vm_username\": text(\"NSS_VM_USERNAME\", \"zsroot\"),\n        # Passwords and keys are taken as they are; only a missing value is rejected.\n        \"vm_password\": env.get(\"NSS_VM_PASSWORD\") or \"\",\n        \"host_key_fingerprint\": text(\"NSS_SSH_HOST_KEY_FINGERPRINT\"),\n        \"ssh_wait_seconds\": _number(env, \"NSS_SSH_WAIT_SECONDS\", 900),\n        \"command_timeout_seconds\": _number(env, \"NSS_COMMAND_TIMEOUT_SECONDS\", 300),\n        \"server_name\": text(\"NSS_SERVER_NAME\"),\n        \"server_type\": text(\"NSS_SERVER_TYPE\", \"NSS_FOR_WEB\"),\n        \"allow_healthy_server\": _flag(env, \"NSS_ALLOW_HEALTHY_SERVER\"),\n        \"force_install\": _flag(env, \"NSS_FORCE_CERTIFICATE_INSTALL\"),\n        \"print_dump_config\": _flag(env, \"NSS_PRINT_DUMP_CONFIG\", default=True),\n        \"service_interface_address\": text(\"NSS_SERVICE_INTERFACE_ADDRESS\"),\n        \"service_interface_gateway\": text(\"NSS_SERVICE_INTERFACE_GATEWAY\"),\n        \"start_nss\": _flag(env, \"NSS_START\"),\n        \"update_timeout_seconds\": _number(env, \"NSS_UPDATE_TIMEOUT_SECONDS\", 600),\n        \"enable_autostart\": _flag(env, \"NSS_ENABLE_AUTOSTART\"),\n        \"client_id\": text(\"ZSCALER_CLIENT_ID\"),\n        \"client_secret\": env.get(\"ZSCALER_CLIENT_SECRET\") or \"\",\n        \"private_key\": env.get(\"ZSCALER_PRIVATE_KEY\") or \"\",\n        \"vanity_domain\": text(\"ZSCALER_VANITY_DOMAIN\"),\n        \"cloud\": text(\"ZSCALER_CLOUD\"),\n        \"zia_username\": text(\"ZIA_USERNAME\"),\n        \"zia_password\": env.get(\"ZIA_PASSWORD\") or \"\",\n        \"zia_api_key\": env.get(\"ZIA_API_KEY\") or \"\",\n        \"zia_cloud\": text(\"ZIA_CLOUD\"),\n        \"output_path\": text(\"AZ_SCRIPTS_OUTPUT_PATH\"),\n    }\n\n    missing = [\n        name\n        for name, key in (\n            (\"NSS_VM_HOST\", \"vm_host\"),\n            (\"NSS_VM_PASSWORD\", \"vm_password\"),\n            (\"NSS_SERVER_NAME\", \"server_name\"),\n        )\n        if not settings[key]\n    ]\n\n    if settings[\"client_id\"]:\n        settings[\"auth\"] = \"oneapi\"\n        if not settings[\"vanity_domain\"]:\n            missing.append(\"ZSCALER_VANITY_DOMAIN\")\n        if not settings[\"client_secret\"] and not settings[\"private_key\"]:\n            missing.append(\"ZSCALER_CLIENT_SECRET or ZSCALER_PRIVATE_KEY\")\n    elif settings[\"zia_username\"]:\n        settings[\"auth\"] = \"legacy\"\n        missing.extend(\n            name\n            for name, key in (\n                (\"ZIA_PASSWORD\", \"zia_password\"),\n                (\"ZIA_API_KEY\", \"zia_api_key\"),\n                (\"ZIA_CLOUD\", \"zia_cloud\"),\n            )\n            if not settings[key]\n        )\n    else:\n        settings[\"auth\"] = None\n        missing.append(\n            \"Zscaler credentials: either OneAPI (ZSCALER_CLIENT_ID, ZSCALER_VANITY_DOMAIN and \"\n            \"ZSCALER_CLIENT_SECRET or ZSCALER_PRIVATE_KEY) or the legacy ZIA API \"\n            \"(ZIA_USERNAME, ZIA_PASSWORD, ZIA_API_KEY and ZIA_CLOUD)\"\n        )\n\n    if missing:\n        raise AutomationError(\"Required settings are missing: \" + \"; \".join(missing) + \".\")\n\n    if settings[\"server_type\"] not in NSS_SERVER_TYPES:\n        raise AutomationError(\"NSS_SERVER_TYPE must be one of: \" + \", \".join(NSS_SERVER_TYPES) + \".\")\n\n    _check_service_interface(settings[\"service_interface_address\"], settings[\"service_interface_gateway\"])\n\n    # The user name is used in a remote path, so it is limited to characters that need no quoting.\n    if not re.fullmatch(r\"[a-z_][a-z0-9_-]*\", settings[\"vm_username\"]):\n        raise AutomationError(\"NSS_VM_USERNAME is not a valid user name.\")\n\n    return settings\n\n\n# --------------------------------------------------------------------------------------\n# ZIA\n# --------------------------------------------------------------------------------------\n\n\ndef connect_zia(settings):\n    \"\"\"Returns a zscaler-sdk-python client for the credentials that are set.\"\"\"\n    logging_off = {\"enabled\": False, \"verbose\": False}\n\n    if settings[\"auth\"] == \"legacy\":\n        from zscaler.oneapi_client import LegacyZIAClient\n\n        log(\"Authenticating to ZIA with the legacy API (ZIA_USERNAME, ZIA_PASSWORD, ZIA_API_KEY, ZIA_CLOUD).\")\n        return LegacyZIAClient(\n            {\n                \"username\": settings[\"zia_username\"],\n                \"password\": settings[\"zia_password\"],\n                \"api_key\": settings[\"zia_api_key\"],\n                \"cloud\": settings[\"zia_cloud\"],\n                \"logging\": logging_off,\n            }\n        )\n\n    from zscaler import ZscalerClient\n\n    if settings[\"zia_username\"]:\n        log(\"Both OneAPI and legacy ZIA credentials are set. OneAPI is used.\")\n    log(\"Authenticating to Zscaler with OneAPI (ZSCALER_CLIENT_ID and ZSCALER_VANITY_DOMAIN).\")\n\n    config = {\n        \"clientId\": settings[\"client_id\"],\n        \"vanityDomain\": settings[\"vanity_domain\"],\n        \"logging\": logging_off,\n    }\n    if settings[\"client_secret\"]:\n        config[\"clientSecret\"] = settings[\"client_secret\"]\n    else:\n        config[\"privateKey\"] = settings[\"private_key\"]\n    if settings[\"cloud\"]:\n        config[\"cloud\"] = settings[\"cloud\"]\n    return ZscalerClient(config)\n\n\ndef find_nss_server(client, name):\n    \"\"\"Returns the NSS server object with exactly this name, or None.\"\"\"\n    servers, _, error = client.zia.nss_servers.list_nss_servers()\n    if error:\n        raise AutomationError(f\"Listing the NSS servers in ZIA failed: {error}\")\n\n    matches = [server for server in servers or [] if _field(server, \"name\") == name]\n    if len(matches) > 1:\n        raise AutomationError(f\"ZIA has {len(matches)} NSS servers named '{name}'. Use a name that is unique.\")\n    return matches[0] if matches else None\n\n\ndef create_nss_server(client, name, server_type):\n    server, _, error = client.zia.nss_servers.add_nss_server(name=name, status=\"ENABLED\", type=server_type)\n    if error:\n        raise AutomationError(f\"Creating the NSS server '{name}' in ZIA failed: {error}\")\n    if server is None or _field(server, \"id\") is None:\n        raise AutomationError(f\"ZIA did not return an ID for the new NSS server '{name}'.\")\n    return server\n\n\ndef download_certificate(client, nss_id):\n    \"\"\"Returns the certificate ZIP file of the NSS server as bytes, downloaded by the SDK.\"\"\"\n    download = getattr(client.zia.nss_servers, \"nss_download_certificate\", None)\n    if not callable(download):\n        raise AutomationError(\n            f\"The installed zscaler-sdk-python{_installed_sdk_version()} has no nss_download_certificate. \"\n            f\"Install zscaler-sdk-python {MINIMUM_SDK_VERSION} or later.\"\n        )\n\n    content, _, error = download(nss_id)\n\n    if error:\n        raise AutomationError(f\"Downloading the certificate of NSS server {nss_id} failed: {error}\")\n    if not content:\n        raise AutomationError(f\"ZIA returned no certificate for NSS server {nss_id}.\")\n    return bytes(content)\n\n\ndef _installed_sdk_version():\n    try:\n        from importlib.metadata import version\n\n        return f\" ({version('zscaler-sdk-python')})\"\n    except Exception:\n        return \"\"\n\n\ndef certificate_digest(content):\n    \"\"\"Validates the downloaded bytes and returns a digest of the files inside the ZIP archive.\n\n    The digest covers the member names and contents only, so it stays the same when ZIA builds\n    the archive again for the same certificate.\n    \"\"\"\n    if not zipfile.is_zipfile(io.BytesIO(content)):\n        raise AutomationError(\n            f\"ZIA returned {len(content)} bytes that are not a ZIP archive, so nothing was copied to the virtual machine.\"\n        )\n\n    digest = hashlib.sha256()\n    try:\n        with zipfile.ZipFile(io.BytesIO(content)) as archive:\n            names = sorted(info.filename for info in archive.infolist() if not info.is_dir())\n            if not names:\n                raise AutomationError(\"The certificate ZIP archive returned by ZIA is empty.\")\n            for name in names:\n                digest.update(name.encode(\"utf-8\") + b\"\\0\")\n                digest.update(hashlib.sha256(archive.read(name)).digest())\n    except zipfile.BadZipFile as error:\n        raise AutomationError(f\"The certificate ZIP archive returned by ZIA is damaged: {error}\") from error\n    return digest.hexdigest()\n\n\ndef _field(item, name):\n    if isinstance(item, dict):\n        return item.get(name)\n    return getattr(item, name, None)\n\n\n# --------------------------------------------------------------------------------------\n# NSS virtual machine\n# --------------------------------------------------------------------------------------\n\n\nclass NssVm:\n    \"\"\"SSH session to the NSS virtual machine, authenticated with the password of the account.\"\"\"\n\n    def __init__(self, settings):\n        self._host = settings[\"vm_host\"]\n        self._port = settings[\"vm_port\"]\n        self._username = settings[\"vm_username\"]\n        self._password = settings[\"vm_password\"]\n        self._expected_fingerprint = settings[\"host_key_fingerprint\"]\n        self._wait_seconds = settings[\"ssh_wait_seconds\"]\n        self._command_timeout = settings[\"command_timeout_seconds\"]\n        self._transport = None\n        self.home = f\"/home/{self._username}\"\n        # Set by locate_nss: the nss command with its directory, and the PATH it is run with.\n        self.nss = \"nss\"\n        self.nss_search_path = None\n\n    def connect(self):\n        \"\"\"Waits until SSH answers, then authenticates. A rejected password is not retried.\"\"\"\n        import paramiko\n\n        deadline = time.monotonic() + self._wait_seconds\n        attempt = 0\n        while True:\n            attempt += 1\n            transport = None\n            try:\n                connection = socket.create_connection((self._host, self._port), timeout=15)\n                transport = paramiko.Transport(connection)\n                transport.banner_timeout = 30\n                transport.start_client(timeout=30)\n                self._check_host_key(transport.get_remote_server_key())\n                self._authenticate(transport, paramiko)\n                transport.set_keepalive(30)\n                self._transport = transport\n                return\n            except paramiko.AuthenticationException as error:\n                self._close(transport)\n                raise AutomationError(\n                    f\"The virtual machine rejected the password of '{self._username}' ({type(error).__name__}). \"\n                    \"Check NSS_VM_PASSWORD.\"\n                ) from None\n            except AutomationError:\n                self._close(transport)\n                raise\n            except (OSError, EOFError, paramiko.SSHException) as error:\n                self._close(transport)\n                if time.monotonic() >= deadline:\n                    raise AutomationError(\n                        f\"SSH to {self._host}:{self._port} did not answer within {self._wait_seconds} seconds \"\n                        f\"({type(error).__name__}: {error}).\"\n                    ) from None\n                if attempt == 1:\n                    log(f\"Waiting for SSH on {self._host}:{self._port} ...\")\n                time.sleep(10)\n\n    def _check_host_key(self, key):\n        fingerprint = \"SHA256:\" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode(\"ascii\").rstrip(\"=\")\n        if not self._expected_fingerprint:\n            log(f\"SSH host key {key.get_name()} {fingerprint} (not verified: NSS_SSH_HOST_KEY_FINGERPRINT is not set).\")\n            return\n        if fingerprint.rstrip(\"=\") != self._expected_fingerprint.rstrip(\"=\"):\n            raise AutomationError(\n                f\"The SSH host key of {self._host} is {fingerprint}, which is not the fingerprint in \"\n                \"NSS_SSH_HOST_KEY_FINGERPRINT. Nothing was sent to the virtual machine.\"\n            )\n        log(f\"SSH host key {fingerprint} matches NSS_SSH_HOST_KEY_FINGERPRINT.\")\n\n    def _authenticate(self, transport, paramiko):\n        password = self._password\n\n        def answer(title, instructions, prompts):\n            return [password for _ in prompts]\n\n        try:\n            transport.auth_password(self._username, password, fallback=False)\n        except paramiko.BadAuthenticationType as error:\n            if \"keyboard-interactive\" not in error.allowed_types:\n                raise AutomationError(\n                    \"The virtual machine accepts neither password nor keyboard-interactive authentication \"\n                    f\"(allowed: {', '.join(error.allowed_types)}).\"\n                ) from None\n            transport.auth_interactive(self._username, answer)\n        except paramiko.AuthenticationException:\n            # Some servers offer the password method but only accept the password interactively.\n            if not transport.is_active():\n                raise\n            transport.auth_interactive(self._username, answer)\n\n        if not transport.is_authenticated():\n            raise paramiko.AuthenticationException(\"Authentication is incomplete.\")\n\n    @staticmethod\n    def _close(transport):\n        if transport is not None:\n            try:\n                transport.close()\n            except Exception:\n                pass\n\n    def close(self):\n        self._close(self._transport)\n        self._transport = None\n\n    def run(self, command, input_bytes=None, sudo=False, answers=None, timeout=None):\n        \"\"\"Runs a command and returns (exit status, output). With sudo, the command must contain SUDO_PROMPT.\n\n        `timeout` is the number of seconds the command may take, when that is not the usual time.\n\n        `answers` is for a command that asks questions: a list of ((pattern, most times), reply). A\n        question is the last line of the output, without a line end. A known question gets its reply.\n        The run stops when a question is asked more often than expected, which means the reply was\n        not accepted, and when the command waits on a line that is no known question. It never guesses.\n        \"\"\"\n        channel = self._transport.open_session(timeout=30)\n        try:\n            if sudo:\n                # sudo may require a terminal, and with one the prompt arrives in the output.\n                channel.get_pty(term=\"dumb\", width=200, height=50)\n            channel.exec_command(command)\n\n            if input_bytes is not None:\n                channel.sendall(input_bytes)\n                channel.shutdown_write()\n\n            output = bytearray()\n            checked = 0\n            password_sent = False\n            prompt = SUDO_PROMPT.encode(\"ascii\")\n            timeout = timeout or self._command_timeout\n            deadline = time.monotonic() + timeout\n            answered = 0\n            asked = [0 for _ in answers or []]\n            last_received = time.monotonic()\n\n            while True:\n                received = False\n                if channel.recv_ready():\n                    output.extend(channel.recv(65536))\n                    received = True\n                if channel.recv_stderr_ready():\n                    output.extend(channel.recv_stderr(65536))\n                    received = True\n\n                if sudo and prompt in output[checked:]:\n                    checked = output.index(prompt, checked) + len(prompt)\n                    if password_sent:\n                        raise AutomationError(\n                            f\"sudo rejected the password of '{self._username}' on the virtual machine.\"\n                        )\n                    channel.sendall(self._password.encode(\"utf-8\") + b\"\\n\")\n                    password_sent = True\n                    answered = len(output)\n\n                if received:\n                    last_received = time.monotonic()\n                question = self._last_line(output[answered:]) if answers else \"\"\n                if question and received:\n                    for index, ((pattern, most), reply) in enumerate(answers):\n                        if pattern.search(question):\n                            asked[index] += 1\n                            if asked[index] > most:\n                                raise AutomationError(\n                                    \"The virtual machine asked a question again after it was answered, so it did not \"\n                                    f\"accept the answer '{reply}'. Output so far:\\n\" + self._readable(output)\n                                )\n                            channel.sendall(reply.encode(\"ascii\") + b\"\\n\")\n                            answered = len(output)\n                            break\n\n                if not received:\n                    if question and time.monotonic() - last_received >= QUESTION_WAIT_SECONDS:\n                        raise AutomationError(\n                            f\"A command on the virtual machine waits for input after '{question.strip()}', which is \"\n                            \"not a question this script knows. Nothing was answered to it. Output so far:\\n\"\n                            + self._readable(output)\n                        )\n                    if channel.exit_status_ready():\n                        # Output that arrived together with the exit status is still buffered.\n                        while channel.recv_ready():\n                            output.extend(channel.recv(65536))\n                        while channel.recv_stderr_ready():\n                            output.extend(channel.recv_stderr(65536))\n                        break\n                    if time.monotonic() >= deadline:\n                        raise AutomationError(\n                            f\"A command on the virtual machine did not finish within {timeout} seconds. \"\n                            \"Output so far:\\n\" + self._readable(output)\n                        )\n                    time.sleep(0.05)\n\n            return channel.recv_exit_status(), self._readable(output)\n        finally:\n            channel.close()\n\n    @staticmethod\n    def _last_line(output):\n        \"\"\"The text after the last line end: where a command that asks a question waits.\"\"\"\n        return bytes(output).decode(\"utf-8\", errors=\"replace\").replace(\"\\r\", \"\\n\").rsplit(\"\\n\", 1)[-1]\n\n    def login_path(self):\n        \"\"\"Returns the PATH of a login shell on the virtual machine, or None when it cannot be read.\"\"\"\n        import paramiko\n\n        answer = re.compile(re.escape(PATH_MARK).encode(\"ascii\") + rb\"(/[^\\r\\n]*)\\r?\\n\")\n        channel = None\n        try:\n            channel = self._transport.open_session(timeout=30)\n            channel.get_pty(term=\"dumb\", width=500, height=50)\n            channel.invoke_shell()\n            output = bytearray()\n            asked = 0\n            quiet_since = time.monotonic()\n            deadline = quiet_since + LOGIN_SHELL_SECONDS\n            while time.monotonic() < deadline:\n                if channel.recv_ready():\n                    output.extend(channel.recv(65536))\n                    quiet_since = time.monotonic()\n                    found = answer.search(output)\n                    if found:\n                        path = found.group(1).decode(\"utf-8\", errors=\"replace\").strip()\n                        return path if re.fullmatch(r\"[A-Za-z0-9_./:~+@-]+\", path) else None\n                elif channel.exit_status_ready():\n                    return None\n                elif asked < 2 and time.monotonic() - quiet_since >= (1 if asked == 0 else 8):\n                    # The shell has printed what it prints at a login and waits for input. The line the\n                    # terminal echoes back has $PATH after the mark, the answer has the value. It is\n                    # asked a second time in case the login discarded what was typed too early.\n                    channel.sendall(f'echo \"{PATH_MARK}$PATH\"\\n'.encode(\"ascii\"))\n                    asked += 1\n                    quiet_since = time.monotonic()\n                else:\n                    time.sleep(0.05)\n            return None\n        except (paramiko.SSHException, OSError, EOFError):\n            return None\n        finally:\n            if channel is not None:\n                channel.close()\n\n    def locate_nss(self):\n        \"\"\"Finds the nss command, so that sudo can be given its full path, and says where it was found.\"\"\"\n        status, output = self.run(\"sh -c 'command -v nss'\")\n        if status == 0 and output.startswith(\"/\"):\n            self.nss = output.splitlines()[-1].strip()\n            log(f\"The nss command is {self.nss}.\")\n            return\n\n        status, output = self.run(\"sh -c 'echo $PATH'\")\n        session_path = output.strip() if status == 0 else \"\"\n        login_path = self.login_path()\n        if login_path:\n            status, output = self.run(f\"env PATH='{login_path}' sh -c 'command -v nss'\")\n            if status == 0 and output.startswith(\"/\"):\n                self.nss = output.splitlines()[-1].strip()\n                self.nss_search_path = login_path\n                log(f\"The nss command is {self.nss}, found with the PATH of a login shell.\")\n                return\n\n        candidates = \" \".join(f\"{directory}/nss\" for directory in NSS_DIRECTORIES)\n        status, output = self.run(\n            f\"sh -c 'for f in {candidates}; do if [ -x $f ]; then echo $f; exit 0; fi; done; exit 1'\"\n        )\n        if status == 0 and output.startswith(\"/\"):\n            self.nss = output.splitlines()[-1].strip()\n            known_path = login_path or session_path\n            self.nss_search_path = \":\".join(part for part in (os.path.dirname(self.nss), known_path) if part)\n            if not re.fullmatch(r\"[A-Za-z0-9_./:~+@-]+\", self.nss_search_path):\n                self.nss_search_path = os.path.dirname(self.nss)\n            log(\n                f\"The nss command is {self.nss}. No PATH has it; it was found by looking in {os.path.dirname(self.nss)}.\"\n            )\n            return\n\n        raise AutomationError(\n            \"The nss command was not found on the virtual machine. \"\n            f\"PATH of the SSH session: {session_path or 'could not be read'}. \"\n            f\"PATH of a login shell: {login_path or 'could not be read'}. \"\n            f\"Also looked in: {', '.join(NSS_DIRECTORIES)}. \"\n            \"Nothing was created or changed in ZIA.\"\n        )\n\n    def sudo_nss(self, arguments):\n        \"\"\"The command line that runs `sudo nss <arguments>` the way a login shell would find it.\"\"\"\n        environment = f\"env PATH='{self.nss_search_path}' \" if self.nss_search_path else \"\"\n        return f\"{environment}sudo -p '{SUDO_PROMPT}' {self.nss} {arguments}\"\n\n    def _readable(self, output):\n        text = bytes(output).decode(\"utf-8\", errors=\"replace\").replace(\"\\r\\n\", \"\\n\")\n        text = text.replace(SUDO_PROMPT, \"\")\n        if self._password:\n            text = text.replace(self._password, \"********\")\n        return text.strip()\n\n    def upload(self, content, remote_path):\n        \"\"\"Copies bytes to a file on the virtual machine, readable by its owner only.\"\"\"\n        try:\n            sftp = self._transport.open_sftp_client()\n        except Exception as error:\n            log(f\"SFTP is not available ({type(error).__name__}); copying the file through the SSH session instead.\")\n            sftp = None\n\n        if sftp is not None:\n            try:\n                sftp.putfo(io.BytesIO(content), remote_path)\n                sftp.chmod(remote_path, 0o600)\n                size = sftp.stat(remote_path).st_size\n            finally:\n                sftp.close()\n        else:\n            status, output = self.run(f\"cat > {remote_path} && chmod 600 {remote_path}\", input_bytes=content)\n            if status != 0:\n                raise AutomationError(f\"Copying the file to {remote_path} failed (exit status {status}):\\n{output}\")\n            status, output = self.run(f\"wc -c < {remote_path}\")\n            size = int(output.split()[0]) if status == 0 and output.split() and output.split()[0].isdigit() else -1\n\n        if size != len(content):\n            raise AutomationError(\n                f\"{remote_path} on the virtual machine has {size} bytes, but {len(content)} bytes were sent.\"\n            )\n\n    def read_text(self, remote_path):\n        \"\"\"Returns the content of a small text file, or None when it cannot be read.\"\"\"\n        status, output = self.run(f\"cat {remote_path}\")\n        return output if status == 0 else None\n\n\ndef install_certificate(vm, content, print_dump_config):\n    \"\"\"Follows the Zscaler guide: copy the ZIP file to the home directory, install it, check the configuration.\"\"\"\n    remote_path = f\"{vm.home}/{CERTIFICATE_FILE_NAME}\"\n\n    log(f\"Copying {CERTIFICATE_FILE_NAME} ({len(content)} bytes) to {remote_path}.\")\n    vm.upload(content, remote_path)\n\n    log(f\"Running: sudo nss install-cert {CERTIFICATE_FILE_NAME}\")\n    status, output = vm.run(f\"cd {vm.home} && {vm.sudo_nss(f'install-cert {CERTIFICATE_FILE_NAME}')}\", sudo=True)\n    if output:\n        log(output)\n    if status != 0:\n        # The last lines of the output are repeated in the error, which outlives the script log.\n        last_lines = [line.strip() for line in output.splitlines() if line.strip()][-3:]\n        raise AutomationError(\n            f\"'sudo nss install-cert {CERTIFICATE_FILE_NAME}' failed with exit status {status}.\"\n            + (f\" Last output: {' / '.join(last_lines)}\" if last_lines else \"\")\n        )\n\n    log(\"Running: sudo nss dump-config\")\n    status, output = vm.run(vm.sudo_nss(\"dump-config\"), sudo=True)\n    if status != 0:\n        raise AutomationError(\n            f\"The certificate was installed, but 'sudo nss dump-config' failed with exit status {status}:\\n{output}\"\n        )\n    if print_dump_config:\n        log(output)\n    else:\n        log(\n            f\"'sudo nss dump-config' succeeded ({len(output.splitlines())} lines). The output is not shown here; \"\n            \"run the command on the virtual machine to review it.\"\n        )\n\n\ndef write_marker(vm, marker, file_name=MARKER_FILE_NAME):\n    status, output = vm.run(f\"echo '{marker}' > {vm.home}/{file_name}\")\n    if status != 0:\n        log(f\"Warning: the marker file {file_name} was not written (exit status {status}): {output}\")\n\n\ndef configured_service_interface(dump_config):\n    \"\"\"Returns (address, gateway) as `nss dump-config` shows them; a value it does not show is None.\"\"\"\n    values = []\n    for key in (\"smnet_dev\", \"smnet_dflt_gw\"):\n        found = re.search(rf\"^\\s*{key}\\s*[:=]\\s*(\\S+)\\s*$\", dump_config, re.MULTILINE)\n        values.append(found.group(1) if found else None)\n    return tuple(values)\n\n\ndef configure_service_interface(vm, address, gateway):\n    \"\"\"Answers `sudo nss configure` with the service interface values. Returns False when they are already set.\"\"\"\n    wanted = (address, gateway)\n    marker = f\"{address} {gateway}\"\n    if (vm.read_text(f\"{vm.home}/{CONFIGURE_MARKER_FILE_NAME}\") or \"\").strip() == marker:\n        log(\n            f\"The service interface was configured with {address} and gateway {gateway} by an earlier run. Nothing to do.\"\n        )\n        return False\n\n    status, output = vm.run(vm.sudo_nss(\"dump-config\"), sudo=True)\n    if status == 0 and configured_service_interface(output) == wanted:\n        log(f\"The service interface already has {address} and gateway {gateway}. Nothing to do.\")\n        write_marker(vm, marker, CONFIGURE_MARKER_FILE_NAME)\n        return False\n\n    log(f\"Running: sudo nss configure (service interface {address}, gateway {gateway}; name servers are not changed)\")\n    status, output = vm.run(\n        vm.sudo_nss(\"configure\"),\n        sudo=True,\n        answers=[\n            (NAME_SERVER_QUESTION, \"n\"),\n            (ADD_NAME_SERVER_QUESTION, \"n\"),\n            (SERVICE_ADDRESS_QUESTION, address),\n            (SERVICE_GATEWAY_QUESTION, gateway),\n        ],\n    )\n    if output:\n        log(output)\n    last_lines = \" / \".join([line.strip() for line in output.splitlines() if line.strip()][-3:])\n    if status != 0:\n        raise AutomationError(f\"'sudo nss configure' failed with exit status {status}. Last output: {last_lines}\")\n\n    status, check = vm.run(vm.sudo_nss(\"dump-config\"), sudo=True)\n    shown = configured_service_interface(check) if status == 0 else (None, None)\n    if None not in shown:\n        if shown != wanted:\n            raise AutomationError(\n                \"'sudo nss configure' ended without an error, but 'sudo nss dump-config' shows the service interface \"\n                f\"as {shown[0]} with gateway {shown[1]}, not {address} with gateway {gateway}.\"\n            )\n        log(\"'sudo nss dump-config' shows the new values.\")\n    elif CONFIGURE_SUCCESS in output:\n        log(\n            \"'sudo nss dump-config' does not show the service interface in a form this script reads; \"\n            f\"'{CONFIGURE_SUCCESS}' from nss configure is taken as the result.\"\n        )\n    else:\n        raise AutomationError(\n            f\"'sudo nss configure' ended without '{CONFIGURE_SUCCESS}', and 'sudo nss dump-config' does not show the \"\n            f\"service interface. Last output: {last_lines}\"\n        )\n\n    write_marker(vm, marker, CONFIGURE_MARKER_FILE_NAME)\n    return True\n\n\ndef nss_status(vm):\n    \"\"\"Runs `sudo nss status` and returns (True when it shows NSS running, output).\"\"\"\n    log(\"Running: sudo nss status\")\n    _, output = vm.run(vm.sudo_nss(\"status\"), sudo=True)\n    if output:\n        log(output)\n    return bool(RUNNING_STATUS.search(output)), output\n\n\ndef start_nss(vm, update_timeout):\n    \"\"\"Follows the Zscaler guide: download the NSS binaries, start NSS, check that it runs.\n\n    Returns False when NSS already ran. Raises AutomationError when NSS does not run at the end.\n    `sudo nss status` decides that, and not the exit status of `update-now` or `start`: what the\n    two commands return when there is nothing to update, or nothing to start, is not known.\n    \"\"\"\n    running, _ = nss_status(vm)\n    if running:\n        log(\"NSS is already running. Nothing to update or start.\")\n        return False\n\n    log(\"Running: sudo nss update-now (downloads and installs the NSS binaries, which can take several minutes)\")\n    update_status, output = vm.run(vm.sudo_nss(\"update-now\"), sudo=True, timeout=update_timeout)\n    if output:\n        log(output)\n    update_result = \"\"\n    if update_status != 0:\n        update_result = f\"'sudo nss update-now' ended with exit status {update_status}\"\n        if update_status in UPDATE_ERRORS:\n            update_result += f\", which Zscaler documents as: {UPDATE_ERRORS[update_status]}\"\n        update_result += \". \"\n        log(update_result + \"NSS is started all the same, in case the binaries are installed.\")\n\n    log(\"Running: sudo nss start\")\n    start_status, start_output = vm.run(vm.sudo_nss(\"start\"), sudo=True)\n    if start_output:\n        log(start_output)\n\n    time.sleep(START_SETTLE_SECONDS)\n    running, status_output = nss_status(vm)\n    if not running:\n        last_lines = \" / \".join(\n            [line.strip() for line in (status_output or start_output).splitlines() if line.strip()][-3:]\n        )\n        raise AutomationError(\n            f\"{update_result}'sudo nss start' ended with exit status {start_status}, and 'sudo nss status' does not \"\n            f\"show NSS running. Last output: {last_lines or 'none'}\"\n        )\n    return True\n\n\ndef enable_autostart(vm):\n    \"\"\"Makes NSS start when the virtual machine starts. It does not start NSS now.\"\"\"\n    log(\"Running: sudo nss enable-autostart\")\n    status, output = vm.run(vm.sudo_nss(\"enable-autostart\"), sudo=True)\n    if output:\n        log(output)\n    if status != 0:\n        last_lines = \" / \".join([line.strip() for line in output.splitlines() if line.strip()][-3:])\n        raise AutomationError(\n            f\"'sudo nss enable-autostart' failed with exit status {status}. Last output: {last_lines}\"\n        )\n\n\n# --------------------------------------------------------------------------------------\n# Workflow\n# --------------------------------------------------------------------------------------\n\n\ndef run(settings, zia_client_factory=None, vm_factory=None):\n    \"\"\"Runs the workflow and returns the values reported as deployment script outputs.\"\"\"\n    zia_client_factory = zia_client_factory or connect_zia\n    vm_factory = vm_factory or NssVm\n    name = settings[\"server_name\"]\n\n    # The virtual machine is contacted first, so an unreachable machine, a wrong password or a\n    # machine without the nss command stops the run before anything is created in ZIA.\n    vm = vm_factory(settings)\n    log(f\"Connecting to {settings['vm_username']}@{settings['vm_host']} over SSH.\")\n    vm.connect()\n\n    client = None\n    created = False\n    configured = False\n    running = False\n    try:\n        vm.locate_nss()\n        # The service interface is configured before the certificate is installed, and before ZIA\n        # is contacted: a failure here leaves nothing behind in ZIA either.\n        if settings[\"service_interface_address\"]:\n            configured = configure_service_interface(\n                vm, settings[\"service_interface_address\"], settings[\"service_interface_gateway\"]\n            )\n        else:\n            log(\"NSS_SERVICE_INTERFACE_ADDRESS is not set: 'nss configure' is left to you.\")\n        installed_marker = (vm.read_text(f\"{vm.home}/{MARKER_FILE_NAME}\") or \"\").strip()\n\n        client = zia_client_factory(settings)\n        server = find_nss_server(client, name)\n        if server is None:\n            log(f\"Creating the NSS server '{name}' ({settings['server_type']}) in ZIA.\")\n            server = create_nss_server(client, name, settings[\"server_type\"])\n            created = True\n        else:\n            log(f\"The NSS server '{name}' already exists in ZIA and is reused.\")\n\n        nss_id = str(_field(server, \"id\"))\n        if not nss_id.isdigit():\n            raise AutomationError(\"ZIA returned an NSS server ID that is not a number.\")\n        state = _field(server, \"state\")\n        log(f\"NSS server ID: {nss_id}. State reported by ZIA: {state or 'not reported'}.\")\n\n        if created:\n            log(\"The new NSS server is a pending change in ZIA. This script does not activate it; activate it in ZIA.\")\n\n        try:\n            content = download_certificate(client, nss_id)\n        except AutomationError as error:\n            if created:\n                raise AutomationError(\n                    f\"{error} The NSS server was created in this run and is not activated. If ZIA only issues the \"\n                    \"certificate after activation, activate the pending change in ZIA and run this again; the \"\n                    \"server is then reused.\"\n                ) from None\n            raise\n        marker = f\"{nss_id} {certificate_digest(content)}\"\n\n        if installed_marker == marker and not settings[\"force_install\"]:\n            log(\"This certificate is already installed on the virtual machine. Nothing to do.\")\n            installed = False\n        else:\n            # The guide allows the certificate on one active NSS virtual machine only. A reused server\n            # object that ZIA reports as healthy is in use by a machine that is not known to be this one.\n            if not created and state == HEALTHY_STATE and not settings[\"allow_healthy_server\"]:\n                raise AutomationError(\n                    f\"ZIA reports the NSS server '{name}' as {HEALTHY_STATE}, so its certificate is in use by an NSS \"\n                    \"virtual machine, and this run cannot tell that it is this one. The certificate must be installed \"\n                    \"on only one active NSS virtual machine. Use another NSS server name, or allow the reuse explicitly \"\n                    \"(allowHealthyNssServer in the template, NSS_ALLOW_HEALTHY_SERVER=true for the script).\"\n                )\n            install_certificate(vm, content, settings[\"print_dump_config\"])\n            write_marker(vm, marker)\n            installed = True\n            log(\"The NSS certificate is installed.\")\n\n        if settings[\"start_nss\"]:\n            # Everything before this is done and stays done, so NSS that does not start ends the run\n            # with a warning and nssRunning false, not with an error.\n            try:\n                start_nss(vm, settings[\"update_timeout_seconds\"])\n                running = True\n                log(\"NSS is running.\")\n            except AutomationError as error:\n                log(f\"WARNING: NSS is not running. {error}\")\n                if created:\n                    log(\n                        \"This run created the NSS server object, which is a pending change until it is activated \"\n                        \"in ZIA. If that is why NSS did not start, activate it first.\"\n                    )\n                log(\n                    \"The certificate is installed. To start NSS, run 'sudo nss update-now', 'sudo nss start' and \"\n                    \"'sudo nss status' on the virtual machine, or run this again.\"\n                )\n        else:\n            log(\n                \"NSS_START is not set, so NSS is not started. \"\n                \"That is 'sudo nss update-now' and then 'sudo nss start' on the virtual machine.\"\n            )\n\n        if settings[\"enable_autostart\"]:\n            enable_autostart(vm)\n    finally:\n        vm.close()\n        # The Zscaler session is deliberately not closed (no `with`, no __exit__, no deauthenticate):\n        # the SDK ends a ZIA session that made a change in order to activate the staged configuration,\n        # and activation is left to the user. The session expires on its own.\n\n    return {\n        \"nssServerId\": nss_id,\n        \"nssServerName\": name,\n        \"nssServerCreated\": created,\n        \"certificateInstalled\": installed,\n        \"serviceInterfaceConfigured\": configured,\n        \"nssRunning\": running,\n        \"autostartEnabled\": settings[\"enable_autostart\"],\n    }\n\n\nSECRET_SETTINGS = (\"vm_password\", \"client_secret\", \"private_key\", \"zia_password\", \"zia_api_key\")\n\n\ndef scrub(text, settings):\n    \"\"\"Removes the secret values from a message produced by a library.\"\"\"\n    for key in SECRET_SETTINGS:\n        secret = (settings or {}).get(key)\n        if secret:\n            text = text.replace(secret, \"********\")\n    return text\n\n\ndef main():\n    settings = None\n    try:\n        settings = read_settings()\n        outputs = run(settings)\n        if settings[\"output_path\"]:\n            with open(settings[\"output_path\"], \"w\", encoding=\"utf-8\") as output_file:\n                json.dump(outputs, output_file)\n        log(json.dumps(outputs))\n    except AutomationError as error:\n        return fail(f\"ERROR: {error}\", settings)\n    except Exception as error:\n        # No traceback: only the kind of failure and its message, without the secret values.\n        return fail(f\"ERROR: {type(error).__name__}: {error}\", settings)\n    return 0\n\n\ndef fail(message, settings):\n    \"\"\"Prints the error as one line on the error output, which Azure reports as the deployment error.\"\"\"\n    # A log line of its own, so the error is not glued to the line before it in a log that\n    # Azure returns as one line.\n    log(\"The run failed.\")\n    print(scrub(\" \".join(message.split()), settings), file=sys.stderr, flush=True)\n    return 1\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+            "scriptContent": "[replace(variables('$fxv#0'), '__INSTALL_NSS_CERTIFICATE_PY__', variables('$fxv#1'))]",
+            "optionalSettings": [
+              {
+                "name": "ZSCALER_VANITY_DOMAIN",
+                "value": "[parameters('zscalerVanityDomain')]"
+              },
+              {
+                "name": "ZSCALER_CLOUD",
+                "value": "[parameters('zscalerCloud')]"
+              },
+              {
+                "name": "ZIA_USERNAME",
+                "value": "[parameters('ziaUsername')]"
+              },
+              {
+                "name": "ZIA_CLOUD",
+                "value": "[parameters('ziaCloud')]"
+              }
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Resources/deploymentScripts",
+              "apiVersion": "2023-08-01",
+              "name": "[format('{0}-nss-certificate', parameters('vmName'))]",
+              "location": "[parameters('location')]",
+              "kind": "AzureCLI",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')))]": {}
+                }
+              },
+              "properties": {
+                "azCliVersion": "2.89.1",
+                "storageAccountSettings": {
+                  "storageAccountName": "[parameters('storageAccountName')]"
+                },
+                "containerSettings": {
+                  "subnetIds": [
+                    {
+                      "id": "[parameters('subnetId')]"
+                    }
+                  ]
+                },
+                "scriptContent": "[variables('scriptContent')]",
+                "environmentVariables": "[concat(createArray(createObject('name', 'NSS_VM_HOST', 'value', parameters('vmPrivateIpAddress')), createObject('name', 'NSS_SERVER_NAME', 'value', parameters('nssServerName')), createObject('name', 'NSS_SERVER_TYPE', 'value', parameters('nssServerType')), createObject('name', 'NSS_ALLOW_HEALTHY_SERVER', 'value', string(parameters('allowHealthyNssServer'))), createObject('name', 'NSS_SERVICE_INTERFACE_ADDRESS', 'value', parameters('serviceInterfaceAddress')), createObject('name', 'NSS_SERVICE_INTERFACE_GATEWAY', 'value', parameters('serviceInterfaceGateway')), createObject('name', 'NSS_START', 'value', 'true'), createObject('name', 'NSS_ENABLE_AUTOSTART', 'value', 'true'), createObject('name', 'NSS_PRINT_DUMP_CONFIG', 'value', 'false')), filter(variables('optionalSettings'), lambda('setting', not(empty(lambdaVariables('setting').value)))), filter(createArray(createObject('name', 'NSS_VM_PASSWORD', 'secureValue', parameters('vmPassword')), createObject('name', 'ZSCALER_CLIENT_ID', 'secureValue', parameters('zscalerClientId')), createObject('name', 'ZSCALER_CLIENT_SECRET', 'secureValue', parameters('zscalerClientSecret')), createObject('name', 'ZSCALER_PRIVATE_KEY', 'secureValue', parameters('zscalerPrivateKey')), createObject('name', 'ZIA_PASSWORD', 'secureValue', parameters('ziaPassword')), createObject('name', 'ZIA_API_KEY', 'secureValue', parameters('ziaApiKey'))), lambda('setting', not(empty(lambdaVariables('setting').secureValue)))))]",
+                "forceUpdateTag": "[if(empty(parameters('forceUpdateTag')), null(), parameters('forceUpdateTag'))]",
+                "timeout": "PT30M",
+                "cleanupPreference": "OnSuccess",
+                "retentionInterval": "P1D"
+              }
+            }
+          ],
+          "outputs": {
+            "nssServerId": {
+              "type": "string",
+              "metadata": {
+                "description": "ID of the NSS server object in ZIA."
+              },
+              "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-nss-certificate', parameters('vmName'))), '2023-08-01').outputs.nssServerId]"
+            },
+            "nssServerCreated": {
+              "type": "bool",
+              "metadata": {
+                "description": "True when this run created the NSS server object, false when it already existed."
+              },
+              "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-nss-certificate', parameters('vmName'))), '2023-08-01').outputs.nssServerCreated]"
+            },
+            "certificateInstalled": {
+              "type": "bool",
+              "metadata": {
+                "description": "True when this run installed the certificate, false when the same certificate was already installed."
+              },
+              "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-nss-certificate', parameters('vmName'))), '2023-08-01').outputs.certificateInstalled]"
+            },
+            "serviceInterfaceConfigured": {
+              "type": "bool",
+              "metadata": {
+                "description": "True when this run answered nss configure, false when the service interface was already configured with these values."
+              },
+              "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-nss-certificate', parameters('vmName'))), '2023-08-01').outputs.serviceInterfaceConfigured]"
+            },
+            "nssRunning": {
+              "type": "bool",
+              "metadata": {
+                "description": "True when nss status showed NSS running at the end of the run. False when NSS did not start; the script log says why."
+              },
+              "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-nss-certificate', parameters('vmName'))), '2023-08-01').outputs.nssRunning]"
+            },
+            "scriptName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the deployment script that installed the certificate."
+              },
+              "value": "[format('{0}-nss-certificate', parameters('vmName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "existingVirtualNetwork::serviceSubnet",
+        "nssCertificateEnvironment",
+        "virtualMachine",
+        "virtualNetwork"
+      ]
+    }
+  },
+  "outputs": {
+    "vmResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the deployed VM."
+      },
+      "value": "[reference('virtualMachine').outputs.vmResourceId.value]"
+    },
+    "vmName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the deployed VM."
+      },
+      "value": "[reference('virtualMachine').outputs.vmName.value]"
+    },
+    "osDiskResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the managed OS disk imported from the NSS VHD."
+      },
+      "value": "[reference('virtualMachine').outputs.osDiskResourceId.value]"
+    },
+    "managementPublicIpName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the management public IP resource."
+      },
+      "value": "[reference('virtualMachine').outputs.managementPublicIpName.value]"
+    },
+    "managementPublicIpAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "Public IP address of the NSS management interface."
+      },
+      "value": "[reference('virtualMachine').outputs.managementPublicIpAddress.value]"
+    },
+    "managementPrivateIpAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "Private IP address of the NSS management interface."
+      },
+      "value": "[reference('virtualMachine').outputs.managementPrivateIpAddress.value]"
+    },
+    "serviceInterfaceAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "Static private IP address of the NSS service interface with the prefix length of its subnet. This is the answer to the smnet_dev question of nss configure."
+      },
+      "value": "[format('{0}/{1}', reference('virtualMachine').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
+    },
+    "serviceInterfaceGateway": {
+      "type": "string",
+      "metadata": {
+        "description": "Default gateway of the NSS service interface. This is the answer to the smnet_dflt_gw question of nss configure."
+      },
+      "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
+    },
+    "servicePublicIp": {
+      "type": "string",
+      "metadata": {
+        "description": "Public IP address of the NAT gateway. Empty when an existing virtual network is used, because no NAT gateway is created."
+      },
+      "value": "[if(variables('createVirtualNetwork'), reference('virtualNetwork').outputs.servicePublicIpAddress.value, '')]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the storage account used to stage the NSS VHD."
+      },
+      "value": "[variables('vhdStorageAccountName')]"
+    },
+    "virtualNetworkName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the virtual network."
+      },
+      "value": "[parameters('virtualNetworkName')]"
+    },
+    "nssServerId": {
+      "type": "string",
+      "metadata": {
+        "description": "ID of the NSS server object in ZIA. Empty when installNssCertificate is false."
+      },
+      "value": "[if(parameters('installNssCertificate'), reference('nssCertificate').outputs.nssServerId.value, '')]"
+    },
+    "nssRunning": {
+      "type": "bool",
+      "metadata": {
+        "description": "True when the certificate step started NSS, or found it running. False when NSS did not start, which the log of the certificate deployment script explains, and when installNssCertificate is false."
+      },
+      "value": "[if(parameters('installNssCertificate'), reference('nssCertificate').outputs.nssRunning.value, false())]"
+    }
+  }
+}
