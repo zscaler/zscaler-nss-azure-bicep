@@ -275,6 +275,103 @@ $script:Style = @{
     Full = '#'; Free = '-'; Mark = '*'; Spinner = @('|', '/', '-', '\')
 }
 
+function Get-LogoRgb {
+    param([int] $R, [int] $G, [int] $B)
+    return ([char]27 + "[38;2;${R};${G};${B}m")
+}
+
+function Test-LogoTruecolor {
+    if ($env:NO_COLOR) {
+        return $false
+    }
+    if ([Console]::IsOutputRedirected) {
+        return $false
+    }
+    $colorTerm = $env:COLORTERM
+    if ($colorTerm -match '^(?i:truecolor|24bit)$') {
+        return $true
+    }
+    $term = $env:TERM
+    if ($term -match '256color|kitty|iterm') {
+        return $true
+    }
+    return $false
+}
+
+function Write-ZscalerLogo {
+    $art = @(
+        '███████╗███████╗ ██████╗ █████╗ ██╗     ███████╗██████╗ '
+        '╚══███╔╝██╔════╝██╔════╝██╔══██╗██║     ██╔════╝██╔══██╗'
+        '  ███╔╝ ███████╗██║     ███████║██║     █████╗  ██████╔╝'
+        ' ███╔╝  ╚════██║██║     ██╔══██║██║     ██╔══╝  ██╔══██╗'
+        '███████╗███████║╚██████╗██║  ██║███████╗███████╗██║  ██║'
+        '╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝'
+    )
+    $width = 0
+    foreach ($line in $art) {
+        if ($line.Length -gt $width) {
+            $width = $line.Length
+        }
+    }
+    $pad = 2
+    $inner = $width + $pad * 2
+    $reset = [char]27 + '[0m'
+
+    if (-not (Test-LogoTruecolor)) {
+        $bar = '-' * $inner
+        Write-Host ''
+        Write-Host "  +$bar+"
+        foreach ($line in $art) {
+            $padded = $line.PadRight($width)
+            Write-Host ('  |' + (' ' * $pad) + $padded + (' ' * $pad) + '|')
+        }
+        Write-Host "  +$bar+"
+        Write-Host ''
+        return
+    }
+
+    $border = Get-LogoRgb -R 51 -G 85 -B 153
+    $shadowColor = Get-LogoRgb -R 0 -G 61 -B 153
+    $startR = 85; $startG = 204; $startB = 255
+    $endR = 0; $endG = 61; $endB = 153
+    $denom = [Math]::Max($width - 1, 1)
+    $blank = (' ' * $width)
+    $shadow = ('░' * $width)
+    $hLine = ([char]0x2500) * $inner
+
+    Write-Host ''
+    Write-Host ("  ${border}$([char]0x256D)${hLine}$([char]0x256E)${reset}")
+    Write-Host ("  ${border}$([char]0x2502)${reset}" + (' ' * $pad) + $blank + (' ' * $pad) + "${border}$([char]0x2502)${reset}")
+    foreach ($line in $art) {
+        $padded = $line.PadRight($width)
+        $gradient = ''
+        $lastColorKey = $null
+        for ($i = 0; $i -lt $width; $i++) {
+            $ch = $padded[$i]
+            if ($ch -eq ' ') {
+                $gradient += $ch
+                continue
+            }
+            $t = $i / $denom
+            $rr = [int]($startR + ($endR - $startR) * $t)
+            $gg = [int]($startG + ($endG - $startG) * $t)
+            $bb = [int]($startB + ($endB - $startB) * $t)
+            $colorKey = "$rr,$gg,$bb"
+            if ($colorKey -ne $lastColorKey) {
+                $gradient += (Get-LogoRgb -R $rr -G $gg -B $bb)
+                $lastColorKey = $colorKey
+            }
+            $gradient += $ch
+        }
+        $gradient += $reset
+        Write-Host ("  ${border}$([char]0x2502)${reset}" + (' ' * $pad) + $gradient + (' ' * $pad) + "${border}$([char]0x2502)${reset}")
+    }
+    Write-Host ("  ${border}$([char]0x2502)${reset}" + (' ' * $pad) + "${shadowColor}${shadow}${reset}" + (' ' * $pad) + "${border}$([char]0x2502)${reset}")
+    Write-Host ("  ${border}$([char]0x2502)${reset}" + (' ' * $pad) + $blank + (' ' * $pad) + "${border}$([char]0x2502)${reset}")
+    Write-Host ("  ${border}$([char]0x2570)${hLine}$([char]0x256F)${reset}")
+    Write-Host ''
+}
+
 # Removes the bar from the screen, so that a line can be printed in its place.
 function Clear-Bar {
     if ($script:BarDrawn -gt 0) {
@@ -2351,6 +2448,10 @@ if ($Action -in @('Preview', 'Deploy') -and -not $ResourceGroup) {
         $script:Questions = $true
         $script:AcceptSaved = $true
     }
+}
+
+if ($Action -in @('Preview', 'Deploy', 'Watch', 'Outputs', 'Destroy', 'Help')) {
+    Write-ZscalerLogo
 }
 
 switch ($Action) {

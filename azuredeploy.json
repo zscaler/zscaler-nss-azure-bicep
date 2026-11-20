@@ -1,12 +1,11 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-  "languageVersion": "2.0",
   "contentVersion": "1.0.0.0",
   "metadata": {
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "11890393584478862321"
+      "templateHash": "18384362006228805409"
     },
     "name": "Zscaler NSS on Azure",
     "description": "Deploys a single Zscaler Nanolog Streaming Service (NSS) virtual machine with its networking and a managed OS disk imported from the Zscaler NSS VHD. Optionally registers the VM in ZIA and installs its SSL certificate."
@@ -306,42 +305,13 @@
     "createStorageAccount": "[equals(parameters('stgNewOrExisting'), 'new')]",
     "vhdStorageAccountName": "[if(variables('createStorageAccount'), format('vhdstorage{0}', uniqueString(subscription().id, resourceGroup().id)), parameters('nameStorageAccount'))]",
     "certificateStorageAccountName": "[format('nsscert{0}', uniqueString(subscription().id, resourceGroup().id, parameters('vmName')))]",
-    "certificateIdentityName": "[format('{0}-certificate-identity', parameters('vmName'))]"
+    "certificateIdentityName": "[format('{0}-certificate-identity', parameters('vmName'))]",
+    "existingServiceSubnetId": "[resourceId(parameters('virtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]",
+    "existingManagementSubnetId": "[resourceId(parameters('virtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName2'))]",
+    "existingCertificateSubnetId": "[resourceId(parameters('virtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName'))]"
   },
-  "resources": {
-    "existingVirtualNetwork::serviceSubnet": {
-      "condition": "[not(variables('createVirtualNetwork'))]",
-      "existing": true,
-      "type": "Microsoft.Network/virtualNetworks/subnets",
-      "apiVersion": "2025-05-01",
-      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
-      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('subnetName'))]"
-    },
-    "existingVirtualNetwork::managementSubnet": {
-      "condition": "[not(variables('createVirtualNetwork'))]",
-      "existing": true,
-      "type": "Microsoft.Network/virtualNetworks/subnets",
-      "apiVersion": "2025-05-01",
-      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
-      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('subnetName2'))]"
-    },
-    "existingVirtualNetwork::certificateSubnet": {
-      "condition": "[and(not(variables('createVirtualNetwork')), parameters('installNssCertificate'))]",
-      "existing": true,
-      "type": "Microsoft.Network/virtualNetworks/subnets",
-      "apiVersion": "2025-05-01",
-      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
-      "name": "[format('{0}/{1}', parameters('virtualNetworkName'), parameters('certificateSubnetName'))]"
-    },
-    "existingVirtualNetwork": {
-      "condition": "[not(variables('createVirtualNetwork'))]",
-      "existing": true,
-      "type": "Microsoft.Network/virtualNetworks",
-      "apiVersion": "2025-05-01",
-      "resourceGroup": "[parameters('virtualNetworkResourceGroup')]",
-      "name": "[parameters('virtualNetworkName')]"
-    },
-    "networkSecurityGroup": {
+  "resources": [
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name))]",
@@ -474,7 +444,7 @@
         }
       }
     },
-    "virtualNetwork": {
+    {
       "condition": "[variables('createVirtualNetwork')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -510,7 +480,7 @@
             "value": "[parameters('subnetAddressRange2')]"
           },
           "networkSecurityGroupId": {
-            "value": "[reference('networkSecurityGroup').outputs.id.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name))), '2025-04-01').outputs.id.value]"
           },
           "publicIpSku": {
             "value": "[parameters('publicIpSku')]"
@@ -532,7 +502,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "8632535197674090762"
+              "templateHash": "9189662226950525599"
             },
             "description": "New virtual network for NSS: a service subnet behind a NAT gateway, a management subnet and, optionally, a subnet for the NSS certificate deployment script."
           },
@@ -699,21 +669,21 @@
               "metadata": {
                 "description": "Resource ID of the service subnet."
               },
-              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('serviceSubnetName'))]"
+              "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', parameters('virtualNetworkName')), parameters('serviceSubnetName'))]"
             },
             "managementSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the management subnet."
               },
-              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('managementSubnetName'))]"
+              "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', parameters('virtualNetworkName')), parameters('managementSubnetName'))]"
             },
             "certificateSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the subnet for the NSS certificate deployment script. Empty when the subnet is not created."
               },
-              "value": "[if(parameters('createCertificateSubnet'), resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName')), '')]"
+              "value": "[if(parameters('createCertificateSubnet'), format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', parameters('virtualNetworkName')), parameters('certificateSubnetName')), '')]"
             },
             "servicePublicIpAddress": {
               "type": "string",
@@ -733,10 +703,10 @@
         }
       },
       "dependsOn": [
-        "networkSecurityGroup"
+        "[resourceId('Microsoft.Resources/deployments', format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name)))]"
       ]
     },
-    "storageAccount": {
+    {
       "condition": "[variables('createStorageAccount')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -810,7 +780,7 @@
         }
       }
     },
-    "vhdCopy": {
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[format('vhdCopy-{0}', uniqueString('vhdCopy', deployment().name))]",
@@ -843,7 +813,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "1758810666500392169"
+              "templateHash": "14658896946059941915"
             },
             "description": "Copies the Zscaler NSS OS VHD from Zscaler storage into a container of an existing storage account."
           },
@@ -883,18 +853,19 @@
             "$fxv#0": "<#\n.SYNOPSIS\n    Copies the Zscaler NSS OS VHD into the deployment's storage account.\n\n.DESCRIPTION\n    Runs inside the Microsoft.Resources/deploymentScripts resource declared in\n    modules/vhd-copy.bicep, which embeds this file at build time.\n\n    Every input arrives as an environment variable so the SAS token and the\n    storage account key are never written to the deployment history or to the\n    script log.\n\n    The copy is skipped when the destination blob already holds a completed\n    copy, which keeps redeployments fast and independent of SAS token expiry.\n#>\n\n$ErrorActionPreference = 'Stop'\n\nfunction Get-RequiredSetting {\n    param([Parameter(Mandatory)][string] $Name)\n\n    $value = [Environment]::GetEnvironmentVariable($Name)\n    if ([string]::IsNullOrWhiteSpace($value)) {\n        throw \"Environment variable '$Name' is not set.\"\n    }\n    return $value\n}\n\n$sourceVhdUrl = Get-RequiredSetting 'SOURCE_VHD_URL'\n$sourceSasToken = Get-RequiredSetting 'SOURCE_SAS_TOKEN'\n$storageAccountName = Get-RequiredSetting 'DEST_STORAGE_ACCOUNT'\n$storageAccountKey = Get-RequiredSetting 'DEST_STORAGE_KEY'\n$storageEndpointSuffix = Get-RequiredSetting 'DEST_STORAGE_ENDPOINT_SUFFIX'\n$containerName = Get-RequiredSetting 'DEST_CONTAINER'\n$blobName = Get-RequiredSetting 'DEST_BLOB'\n\n$pollIntervalSeconds = 30\n\n$context = New-AzStorageContext `\n    -StorageAccountName $storageAccountName `\n    -StorageAccountKey $storageAccountKey `\n    -Endpoint $storageEndpointSuffix\n\n$destination = @{\n    Context   = $context\n    Container = $containerName\n    Blob      = $blobName\n}\n\n# Returns $null when the destination blob does not exist yet.\n# The blob is looked up by listing rather than by name, because asking for a missing blob raises\n# an error, and the deployment script service reports every recorded error, even a handled one.\nfunction Get-ExistingCopyState {\n    $existingBlob = Get-AzStorageBlob -Context $context -Container $containerName -Prefix $blobName |\n        Where-Object { $_.Name -eq $blobName }\n\n    if (-not $existingBlob) {\n        return $null\n    }\n    return Get-AzStorageBlobCopyState @destination\n}\n\n$copyState = Get-ExistingCopyState\n\nif ($copyState -and $copyState.Status -eq 'Success') {\n    Write-Output \"'$blobName' is already present in container '$containerName'. Skipping the copy.\"\n}\nelse {\n    if ($copyState -and $copyState.Status -eq 'Pending') {\n        Write-Output \"A copy of '$blobName' is already in progress. Waiting for it to finish.\"\n    }\n    else {\n        Write-Output \"Starting the copy of $sourceVhdUrl to '$containerName/$blobName'.\"\n        try {\n            Start-AzStorageBlobCopy `\n                -AbsoluteUri \"$sourceVhdUrl$sourceSasToken\" `\n                -DestContainer $containerName `\n                -DestBlob $blobName `\n                -DestContext $context `\n                -Force | Out-Null\n        }\n        catch {\n            $message = $_.Exception.Message.Replace($sourceSasToken, '?<redacted>')\n            throw \"Could not start the VHD copy. Check the VHD region and the SAS token. $message\"\n        }\n    }\n\n    do {\n        Start-Sleep -Seconds $pollIntervalSeconds\n        $copyState = Get-AzStorageBlobCopyState @destination\n        Write-Output ('VHD copy {0}: {1:N0} of {2:N0} bytes copied.' -f $copyState.Status, $copyState.BytesCopied, $copyState.TotalBytes)\n    } while ($copyState.Status -eq 'Pending')\n\n    if ($copyState.Status -ne 'Success') {\n        throw \"The VHD copy ended with status '$($copyState.Status)': $($copyState.StatusDescription)\"\n    }\n\n    Write-Output 'The VHD has been copied successfully.'\n}\n",
             "nssImageName": "znss_5_2_osdisk.vhd",
             "containerName": "zscalernssrprod",
-            "destinationBlobName": "[format('znss_{0}_osdisk.vhd', parameters('vmName'))]",
+            "destinationBlobName": "[variables('nssImageName')]",
             "isGovRegion": "[contains(parameters('vhdRegion'), 'gov')]",
             "sourceBlobEndpoint": "[if(variables('isGovRegion'), format('https://{0}.blob.core.usgovcloudapi.net', parameters('vhdRegion')), format('https://{0}.blob.core.windows.net', parameters('vhdRegion')))]",
             "sourceContainerName": "[if(variables('isGovRegion'), 'nss-disk', 'nss')]",
             "sourceVhdUrl": "[format('{0}/{1}/{2}', variables('sourceBlobEndpoint'), variables('sourceContainerName'), variables('nssImageName'))]",
-            "sasQueryString": "[if(startsWith(parameters('sasToken'), '?'), parameters('sasToken'), format('?{0}', parameters('sasToken')))]"
+            "sasQueryString": "[if(startsWith(parameters('sasToken'), '?'), parameters('sasToken'), format('?{0}', parameters('sasToken')))]",
+            "storageAccountResourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
           },
           "resources": [
             {
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2025-06-01",
-              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('containerName'))]",
+              "name": "[format('{0}/default/{1}', parameters('storageAccountName'), variables('containerName'))]",
               "properties": {
                 "publicAccess": "None"
               }
@@ -923,7 +894,7 @@
                   },
                   {
                     "name": "DEST_STORAGE_KEY",
-                    "secureValue": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2025-06-01').keys[0].value]"
+                    "secureValue": "[listKeys(variables('storageAccountResourceId'), '2025-06-01').keys[0].value]"
                   },
                   {
                     "name": "DEST_STORAGE_ENDPOINT_SUFFIX",
@@ -943,7 +914,7 @@
                 "retentionInterval": "P1D"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('containerName'))]"
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', split(format('{0}/default/{1}', parameters('storageAccountName'), variables('containerName')), '/')[0], split(format('{0}/default/{1}', parameters('storageAccountName'), variables('containerName')), '/')[1], split(format('{0}/default/{1}', parameters('storageAccountName'), variables('containerName')), '/')[2])]"
               ]
             }
           ],
@@ -953,14 +924,14 @@
               "metadata": {
                 "description": "Blob URI of the copied NSS OS VHD."
               },
-              "value": "[format('{0}{1}/{2}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2025-06-01').primaryEndpoints.blob, variables('containerName'), variables('destinationBlobName'))]"
+              "value": "[format('{0}{1}/{2}', reference(variables('storageAccountResourceId'), '2025-06-01').primaryEndpoints.blob, variables('containerName'), variables('destinationBlobName'))]"
             },
             "storageAccountId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the storage account that holds the copied VHD."
               },
-              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              "value": "[variables('storageAccountResourceId')]"
             },
             "copyScriptName": {
               "type": "string",
@@ -973,10 +944,10 @@
         }
       },
       "dependsOn": [
-        "storageAccount"
+        "[resourceId('Microsoft.Resources/deployments', format('storageAccount-{0}', uniqueString('storageAccount', deployment().name)))]"
       ]
     },
-    "virtualMachine": {
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))]",
@@ -995,24 +966,23 @@
           "virtualMachineSize": {
             "value": "[parameters('virtualMachineSize')]"
           },
-          "managementSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.managementSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName2'))))]",
-          "serviceSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.serviceSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))))]",
+          "managementSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))), '2025-04-01').outputs.managementSubnetId.value), createObject('value', variables('existingManagementSubnetId')))]",
+          "serviceSubnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))), '2025-04-01').outputs.serviceSubnetId.value), createObject('value', variables('existingServiceSubnetId')))]",
           "networkSecurityGroupId": {
-            "value": "[reference('networkSecurityGroup').outputs.id.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name))), '2025-04-01').outputs.id.value]"
           },
           "publicIpSku": {
             "value": "[parameters('publicIpSku')]"
           },
           "vhdUri": {
-            "value": "[reference('vhdCopy').outputs.vhdUri.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('vhdCopy-{0}', uniqueString('vhdCopy', deployment().name))), '2025-04-01').outputs.vhdUri.value]"
           },
           "vhdStorageAccountId": {
-            "value": "[reference('vhdCopy').outputs.storageAccountId.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('vhdCopy-{0}', uniqueString('vhdCopy', deployment().name))), '2025-04-01').outputs.storageAccountId.value]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "languageVersion": "2.0",
           "contentVersion": "1.0.0.0",
           "metadata": {
             "_generator": {
@@ -1081,8 +1051,8 @@
           "variables": {
             "osDiskSizeGB": 600
           },
-          "resources": {
-            "managementPublicIp": {
+          "resources": [
+            {
               "type": "Microsoft.Network/publicIPAddresses",
               "apiVersion": "2025-05-01",
               "name": "[format('{0}-MGMT-IP', parameters('vmName'))]",
@@ -1095,7 +1065,7 @@
                 "publicIPAddressVersion": "IPv4"
               }
             },
-            "managementNic": {
+            {
               "type": "Microsoft.Network/networkInterfaces",
               "apiVersion": "2025-05-01",
               "name": "[format('{0}-MGMT-NIC', parameters('vmName'))]",
@@ -1124,10 +1094,10 @@
                 ]
               },
               "dependsOn": [
-                "managementPublicIp"
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-MGMT-IP', parameters('vmName')))]"
               ]
             },
-            "osDisk": {
+            {
               "type": "Microsoft.Compute/disks",
               "apiVersion": "2025-01-02",
               "name": "[format('{0}-osdisk', parameters('vmName'))]",
@@ -1146,7 +1116,7 @@
                 }
               }
             },
-            "virtualMachine": {
+            {
               "type": "Microsoft.Compute/virtualMachines",
               "apiVersion": "2025-04-01",
               "name": "[parameters('vmName')]",
@@ -1174,7 +1144,7 @@
                       }
                     },
                     {
-                      "id": "[reference('serviceNic').outputs.id.value]",
+                      "id": "[reference(resourceId('Microsoft.Resources/deployments', format('serviceNic-{0}', uniqueString('serviceNic', deployment().name))), '2025-04-01').outputs.id.value]",
                       "properties": {
                         "primary": false
                       }
@@ -1183,12 +1153,12 @@
                 }
               },
               "dependsOn": [
-                "managementNic",
-                "osDisk",
-                "serviceNic"
+                "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-MGMT-NIC', parameters('vmName')))]",
+                "[resourceId('Microsoft.Compute/disks', format('{0}-osdisk', parameters('vmName')))]",
+                "[resourceId('Microsoft.Resources/deployments', format('serviceNic-{0}', uniqueString('serviceNic', deployment().name)))]"
               ]
             },
-            "serviceNicWithAzureAddress": {
+            {
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "[format('serviceNicWithAzureAddress-{0}', uniqueString('serviceNicWithAzureAddress', deployment().name))]",
@@ -1300,7 +1270,7 @@
                 }
               }
             },
-            "serviceNic": {
+            {
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "[format('serviceNic-{0}', uniqueString('serviceNic', deployment().name))]",
@@ -1323,7 +1293,7 @@
                     "value": "[parameters('networkSecurityGroupId')]"
                   },
                   "privateIpAddress": {
-                    "value": "[reference('serviceNicWithAzureAddress').outputs.privateIpAddress.value]"
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', format('serviceNicWithAzureAddress-{0}', uniqueString('serviceNicWithAzureAddress', deployment().name))), '2025-04-01').outputs.privateIpAddress.value]"
                   }
                 },
                 "template": {
@@ -1415,10 +1385,10 @@
                 }
               },
               "dependsOn": [
-                "serviceNicWithAzureAddress"
+                "[resourceId('Microsoft.Resources/deployments', format('serviceNicWithAzureAddress-{0}', uniqueString('serviceNicWithAzureAddress', deployment().name)))]"
               ]
             }
-          },
+          ],
           "outputs": {
             "vmResourceId": {
               "type": "string",
@@ -1453,32 +1423,32 @@
               "metadata": {
                 "description": "Public IP address of the NSS management interface."
               },
-              "value": "[reference('managementPublicIp').ipAddress]"
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-MGMT-IP', parameters('vmName'))), '2025-05-01').ipAddress]"
             },
             "managementPrivateIpAddress": {
               "type": "string",
               "metadata": {
                 "description": "Private IP address of the NSS management interface."
               },
-              "value": "[reference('managementNic').ipConfigurations[0].properties.privateIPAddress]"
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-MGMT-NIC', parameters('vmName'))), '2025-05-01').ipConfigurations[0].properties.privateIPAddress]"
             },
             "servicePrivateIpAddress": {
               "type": "string",
               "metadata": {
                 "description": "Static private IP address of the NSS service interface."
               },
-              "value": "[reference('serviceNic').outputs.privateIpAddress.value]"
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', format('serviceNic-{0}', uniqueString('serviceNic', deployment().name))), '2025-04-01').outputs.privateIpAddress.value]"
             }
           }
         }
       },
       "dependsOn": [
-        "networkSecurityGroup",
-        "vhdCopy",
-        "virtualNetwork"
+        "[resourceId('Microsoft.Resources/deployments', format('networkSecurityGroup-{0}', uniqueString('networkSecurityGroup', deployment().name)))]",
+        "[resourceId('Microsoft.Resources/deployments', format('vhdCopy-{0}', uniqueString('vhdCopy', deployment().name)))]",
+        "[resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name)))]"
       ]
     },
-    "nssCertificateEnvironment": {
+    {
       "condition": "[parameters('installNssCertificate')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -1498,7 +1468,7 @@
           "storageAccountName": {
             "value": "[variables('certificateStorageAccountName')]"
           },
-          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.certificateSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName'))))]"
+          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))), '2025-04-01').outputs.certificateSubnetId.value), createObject('value', variables('existingCertificateSubnetId')))]"
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -1507,7 +1477,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "5780381046458881240"
+              "templateHash": "2456463700214379643"
             },
             "description": "Private environment for the NSS certificate deployment script: its managed identity and the firewalled storage account it runs from."
           },
@@ -1538,6 +1508,9 @@
                 "description": "Resource ID of the subnet the deployment script runs in. It must have the Microsoft.Storage service endpoint."
               }
             }
+          },
+          "variables": {
+            "storageFileDataPrivilegedContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')]"
           },
           "resources": [
             {
@@ -1575,11 +1548,11 @@
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), variables('storageFileDataPrivilegedContributorRoleId'))]",
               "properties": {
                 "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2024-11-30').principalId]",
                 "principalType": "ServicePrincipal",
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')]"
+                "roleDefinitionId": "[variables('storageFileDataPrivilegedContributorRoleId')]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]",
@@ -1606,10 +1579,10 @@
         }
       },
       "dependsOn": [
-        "virtualNetwork"
+        "[resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name)))]"
       ]
     },
-    "nssCertificate": {
+    {
       "condition": "[parameters('installNssCertificate')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -1632,18 +1605,18 @@
           "storageAccountName": {
             "value": "[variables('certificateStorageAccountName')]"
           },
-          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference('virtualNetwork').outputs.certificateSubnetId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('virtualNetworkResourceGroup')), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('certificateSubnetName'))))]",
+          "subnetId": "[if(variables('createVirtualNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))), '2025-04-01').outputs.certificateSubnetId.value), createObject('value', variables('existingCertificateSubnetId')))]",
           "vmPrivateIpAddress": {
-            "value": "[reference('virtualMachine').outputs.managementPrivateIpAddress.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.managementPrivateIpAddress.value]"
           },
           "vmPassword": {
             "value": "[parameters('nssVmPassword')]"
           },
           "serviceInterfaceAddress": {
-            "value": "[format('{0}/{1}', reference('virtualMachine').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
+            "value": "[format('{0}/{1}', reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefix'), filter(coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
           },
           "serviceInterfaceGateway": {
-            "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
+            "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefix'), filter(coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
           },
           "nssServerName": {
             "value": "[parameters('nssServerName')]"
@@ -1692,7 +1665,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "5470972897421633542"
+              "templateHash": "16873938010219916515"
             },
             "description": "Configures the service interface of the NSS virtual machine, creates or reuses the NSS server object in ZIA, downloads its SSL certificate, installs it on the virtual machine, downloads the NSS binaries, starts NSS and enables its automatic start, over SSH from inside the virtual network."
           },
@@ -1851,7 +1824,8 @@
                 "name": "ZIA_CLOUD",
                 "value": "[parameters('ziaCloud')]"
               }
-            ]
+            ],
+            "identityResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
           },
           "resources": [
             {
@@ -1863,7 +1837,7 @@
               "identity": {
                 "type": "UserAssigned",
                 "userAssignedIdentities": {
-                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')))]": {}
+                  "[format('{0}', variables('identityResourceId'))]": {}
                 }
               },
               "properties": {
@@ -1934,76 +1908,75 @@
         }
       },
       "dependsOn": [
-        "existingVirtualNetwork::serviceSubnet",
-        "nssCertificateEnvironment",
-        "virtualMachine",
-        "virtualNetwork"
+        "[resourceId('Microsoft.Resources/deployments', format('nssCertificateEnvironment-{0}', uniqueString('nssCertificateEnvironment', deployment().name)))]",
+        "[resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name)))]",
+        "[resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name)))]"
       ]
     }
-  },
+  ],
   "outputs": {
     "vmResourceId": {
       "type": "string",
       "metadata": {
         "description": "Resource ID of the deployed VM."
       },
-      "value": "[reference('virtualMachine').outputs.vmResourceId.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.vmResourceId.value]"
     },
     "vmName": {
       "type": "string",
       "metadata": {
         "description": "Name of the deployed VM."
       },
-      "value": "[reference('virtualMachine').outputs.vmName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.vmName.value]"
     },
     "osDiskResourceId": {
       "type": "string",
       "metadata": {
         "description": "Resource ID of the managed OS disk imported from the NSS VHD."
       },
-      "value": "[reference('virtualMachine').outputs.osDiskResourceId.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.osDiskResourceId.value]"
     },
     "managementPublicIpName": {
       "type": "string",
       "metadata": {
         "description": "Name of the management public IP resource."
       },
-      "value": "[reference('virtualMachine').outputs.managementPublicIpName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.managementPublicIpName.value]"
     },
     "managementPublicIpAddress": {
       "type": "string",
       "metadata": {
         "description": "Public IP address of the NSS management interface."
       },
-      "value": "[reference('virtualMachine').outputs.managementPublicIpAddress.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.managementPublicIpAddress.value]"
     },
     "managementPrivateIpAddress": {
       "type": "string",
       "metadata": {
         "description": "Private IP address of the NSS management interface."
       },
-      "value": "[reference('virtualMachine').outputs.managementPrivateIpAddress.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.managementPrivateIpAddress.value]"
     },
     "serviceInterfaceAddress": {
       "type": "string",
       "metadata": {
         "description": "Static private IP address of the NSS service interface with the prefix length of its subnet. This is the answer to the smnet_dev question of nss configure."
       },
-      "value": "[format('{0}/{1}', reference('virtualMachine').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
+      "value": "[format('{0}/{1}', reference(resourceId('Microsoft.Resources/deployments', format('virtualMachine-{0}', uniqueString('virtualMachine', deployment().name))), '2025-04-01').outputs.servicePrivateIpAddress.value, split(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefix'), filter(coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), '/')[1])]"
     },
     "serviceInterfaceGateway": {
       "type": "string",
       "metadata": {
         "description": "Default gateway of the NSS service interface. This is the answer to the smnet_dflt_gw question of nss configure."
       },
-      "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefix'), filter(coalesce(tryGet(reference('existingVirtualNetwork::serviceSubnet'), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
+      "value": "[cidrHost(if(variables('createVirtualNetwork'), parameters('subnetAddressRange'), coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefix'), filter(coalesce(tryGet(if(variables('createVirtualNetwork'), createObject(), reference(variables('existingServiceSubnetId'), '2025-05-01', 'full').properties), 'addressPrefixes'), createArray()), lambda('addressRange', not(contains(lambdaVariables('addressRange'), ':'))))[0])), 0)]"
     },
     "servicePublicIp": {
       "type": "string",
       "metadata": {
         "description": "Public IP address of the NAT gateway. Empty when an existing virtual network is used, because no NAT gateway is created."
       },
-      "value": "[if(variables('createVirtualNetwork'), reference('virtualNetwork').outputs.servicePublicIpAddress.value, '')]"
+      "value": "[if(variables('createVirtualNetwork'), reference(resourceId('Microsoft.Resources/deployments', format('virtualNetwork-{0}', uniqueString('virtualNetwork', deployment().name))), '2025-04-01').outputs.servicePublicIpAddress.value, '')]"
     },
     "storageAccountName": {
       "type": "string",
@@ -2024,14 +1997,14 @@
       "metadata": {
         "description": "ID of the NSS server object in ZIA. Empty when installNssCertificate is false."
       },
-      "value": "[if(parameters('installNssCertificate'), reference('nssCertificate').outputs.nssServerId.value, '')]"
+      "value": "[if(parameters('installNssCertificate'), reference(resourceId('Microsoft.Resources/deployments', format('nssCertificate-{0}', uniqueString('nssCertificate', deployment().name))), '2025-04-01').outputs.nssServerId.value, '')]"
     },
     "nssRunning": {
       "type": "bool",
       "metadata": {
         "description": "True when the certificate step started NSS, or found it running. False when NSS did not start, which the log of the certificate deployment script explains, and when installNssCertificate is false."
       },
-      "value": "[if(parameters('installNssCertificate'), reference('nssCertificate').outputs.nssRunning.value, false())]"
+      "value": "[if(parameters('installNssCertificate'), reference(resourceId('Microsoft.Resources/deployments', format('nssCertificate-{0}', uniqueString('nssCertificate', deployment().name))), '2025-04-01').outputs.nssRunning.value, false())]"
     }
   }
 }

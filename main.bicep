@@ -172,12 +172,34 @@ var vhdStorageAccountName = createStorageAccount
 var certificateStorageAccountName = 'nsscert${uniqueString(subscription().id, resourceGroup().id, vmName)}'
 var certificateIdentityName = '${vmName}-certificate-identity'
 
+var existingServiceSubnetId = resourceId(
+  virtualNetworkResourceGroup,
+  'Microsoft.Network/virtualNetworks/subnets',
+  virtualNetworkName,
+  subnetName
+)
+var existingManagementSubnetId = resourceId(
+  virtualNetworkResourceGroup,
+  'Microsoft.Network/virtualNetworks/subnets',
+  virtualNetworkName,
+  subnetName2
+)
+var existingCertificateSubnetId = resourceId(
+  virtualNetworkResourceGroup,
+  'Microsoft.Network/virtualNetworks/subnets',
+  virtualNetworkName,
+  certificateSubnetName
+)
+
 // A subnet of an existing virtual network has its address range in addressPrefix or, when it has
 // more than one, in addressPrefixes. The NSS service interface uses IPv4.
+var existingServiceSubnetProperties = createVirtualNetwork
+  ? {}
+  : reference(existingServiceSubnetId, '2025-05-01', 'full').properties
 var serviceSubnetAddressRange = createVirtualNetwork
   ? subnetAddressRange
-  : existingVirtualNetwork::serviceSubnet!.properties.?addressPrefix ?? filter(
-      existingVirtualNetwork::serviceSubnet!.properties.?addressPrefixes ?? [],
+  : existingServiceSubnetProperties.?addressPrefix ?? filter(
+      existingServiceSubnetProperties.?addressPrefixes ?? [],
       addressRange => !contains(addressRange, ':')
     )[0]
 // What nss configure asks for: the address of the service interface with the prefix length of its
@@ -211,23 +233,6 @@ module virtualNetwork 'modules/virtual-network.bicep' = if (createVirtualNetwork
   }
 }
 
-resource existingVirtualNetwork 'Microsoft.Network/virtualNetworks@2025-05-01' existing = if (!createVirtualNetwork) {
-  name: virtualNetworkName
-  scope: resourceGroup(virtualNetworkResourceGroup)
-
-  resource serviceSubnet 'subnets' existing = {
-    name: subnetName
-  }
-
-  resource managementSubnet 'subnets' existing = {
-    name: subnetName2
-  }
-
-  resource certificateSubnet 'subnets' existing = if (installNssCertificate) {
-    name: certificateSubnetName
-  }
-}
-
 module storageAccount 'modules/storage-account.bicep' = if (createStorageAccount) {
   params: {
     location: location
@@ -258,10 +263,10 @@ module virtualMachine 'modules/virtual-machine.bicep' = {
     virtualMachineSize: virtualMachineSize
     managementSubnetId: createVirtualNetwork
       ? virtualNetwork!.outputs.managementSubnetId
-      : existingVirtualNetwork::managementSubnet.id
+      : existingManagementSubnetId
     serviceSubnetId: createVirtualNetwork
       ? virtualNetwork!.outputs.serviceSubnetId
-      : existingVirtualNetwork::serviceSubnet.id
+      : existingServiceSubnetId
     networkSecurityGroupId: networkSecurityGroup.outputs.id
     publicIpSku: publicIpSku
     vhdUri: vhdCopy.outputs.vhdUri
@@ -278,7 +283,7 @@ module nssCertificateEnvironment 'modules/nss-certificate-environment.bicep' = i
     storageAccountName: certificateStorageAccountName
     subnetId: createVirtualNetwork
       ? virtualNetwork!.outputs.certificateSubnetId
-      : existingVirtualNetwork::certificateSubnet.id
+      : existingCertificateSubnetId
   }
 }
 
@@ -294,7 +299,7 @@ module nssCertificate 'modules/nss-certificate.bicep' = if (installNssCertificat
     storageAccountName: certificateStorageAccountName
     subnetId: createVirtualNetwork
       ? virtualNetwork!.outputs.certificateSubnetId
-      : existingVirtualNetwork::certificateSubnet.id
+      : existingCertificateSubnetId
     vmPrivateIpAddress: virtualMachine.outputs.managementPrivateIpAddress
     vmPassword: nssVmPassword
     serviceInterfaceAddress: serviceInterfaceAddress
